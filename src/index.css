@@ -1,0 +1,54 @@
+:root {
+  --bg-deep: #08060d;
+  --bg-deep-2: #0f0a1c;
+  --purple: #7e14ff;
+  --purple-light: #863bff;
+  --purple-soft: #aa3bff;
+  --accent-blue: #47bfff;
+  --lavender: #ede6ff;
+  --text-primary: #f7f4ff;
+  --text-secondary: rgba(237, 230, 255, 0.68);
+  --text-muted: rgba(237, 230, 255, 0.44);
+  --border-soft: rgba(237, 230, 255, 0.14);
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+button {
+  font-family: inherit;
+}
+
+a {
+  color: inherit;
+}
