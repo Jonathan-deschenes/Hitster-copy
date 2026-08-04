@@ -16,7 +16,8 @@ export default function Home() {
 					</h1>
 					<p className='mx-auto mb-9 max-w-115 text-[1.05rem] leading-[1.65] text-lavender/68 md:mx-0'>
 						Tannée de dépenser tout son argent pour jouer aux 4 000 différentes
-						version de Hitster? Voici la copie créer par Jonathan
+						version de Hitster? Voici Bludster, une copie du jeu de musique
+						créer par Jonathan
 					</p>
 					<div className='flex w-full flex-col items-stretch gap-4 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-center md:justify-start'>
 						<PrimaryLink to='/create' className='w-full sm:w-auto'>
@@ -40,7 +41,7 @@ export default function Home() {
 			</main>
 
 			<footer className='relative z-10 border-t border-lavender/14 px-6 pt-6 pb-8 text-center text-[0.8rem] text-lavender/44 sm:px-10 lg:px-16'>
-				<p>Lorem ipsum dolor sit amet · v0.1 placeholder</p>
+				<p>Bludster · v0.1</p>
 			</footer>
 		</PageBackground>
 	);

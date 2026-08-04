@@ -39,7 +39,7 @@ export default function FormCard({
 					Retour
 				</Link>
 
-				<span className='mb-6 inline-flex items-center gap-2 rounded-full border border-lavender/14 bg-purple/[0.14] px-3.5 py-1.5 text-[0.78rem] font-medium tracking-[0.04em] text-purple-soft uppercase'>
+				<span className='w-fit mb-6 inline-flex items-center gap-2 rounded-full border border-lavender/14 bg-purple/[0.14] px-3.5 py-1.5 text-[0.78rem] font-medium tracking-[0.04em] text-purple-soft uppercase'>
 					<span className='h-1.5 w-1.5 rounded-full bg-accent-blue shadow-[0_0_8px_#47bfff]' />
 					{eyebrow}
 				</span>

@@ -137,7 +137,7 @@ export default function CreateGame() {
 			</FormCard>
 
 			<footer className='relative z-10 border-t border-lavender/14 px-6 pt-6 pb-8 text-center text-[0.8rem] text-lavender/44 sm:px-10 lg:px-16'>
-				<p>Lorem ipsum dolor sit amet · v0.1 placeholder</p>
+				<p>Bludster · v0.1</p>
 			</footer>
 		</PageBackground>
 	);
