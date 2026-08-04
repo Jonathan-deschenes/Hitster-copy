@@ -9,17 +9,29 @@ import { PrimaryButton } from "../components/Button";
 import { IconPlus } from "../components/icons/FormIcons";
 import { musicStyle, roundsOptions } from "../constants/createGameOptions";
 import { useCreateGameForm } from "../hooks/useCreateGameForm";
+import { StorageKeys, StorageUtility } from "../hooks/useStorage";
 
 export default function CreateGame() {
 	const {
 		gameFormSettings,
 		setGameFormSettings,
+		player,
 		setPlayer,
 		isSubmitting,
 		error,
 		buttonDisabled,
 		handleSubmit,
 	} = useCreateGameForm();
+
+	// function to handle the pseudo storage saving
+	const handlePseudoName = (
+		event: React.ChangeEvent<HTMLInputElement, HTMLInputElement>,
+	) => {
+		event.preventDefault();
+
+		setPlayer((prev) => ({ ...prev, pseudo: event.target.value }));
+		StorageUtility.setItem(StorageKeys.USER_NAME, event.target.value);
+	};
 
 	return (
 		<PageBackground>
@@ -38,9 +50,8 @@ export default function CreateGame() {
 						id='player-name'
 						label='Nom du joueur'
 						placeholder='pseudo'
-						onChange={(e) =>
-							setPlayer((prev) => ({ ...prev, pseudo: e.target.value }))
-						}
+						value={player.pseudo}
+						onChange={handlePseudoName}
 						autoComplete='off'
 					/>
 

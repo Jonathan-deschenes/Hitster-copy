@@ -8,6 +8,7 @@ import { PrimaryButton, SecondaryButton } from "../components/Button";
 import { IconArrowRight } from "../components/icons/FormIcons";
 import { usePublicLobbies } from "../hooks/usePublicLobbies";
 import { useJoinGameForm } from "../hooks/useJoinGameForm";
+import { StorageKeys, StorageUtility } from "../hooks/useStorage";
 
 export default function JoinGame() {
 	const { publicLobbies, loading: loadingPublicLobbies } = usePublicLobbies();
@@ -29,6 +30,16 @@ export default function JoinGame() {
 		canJoin,
 	} = useJoinGameForm();
 
+	// function to handle the pseudo storage saving
+	const handlePseudoName = (
+		event: React.ChangeEvent<HTMLInputElement, HTMLInputElement>,
+	) => {
+		event.preventDefault();
+
+		setPlayer((prev) => ({ ...prev, pseudo: event.target.value }));
+		StorageUtility.setItem(StorageKeys.USER_NAME, event.target.value);
+	};
+
 	return (
 		<PageBackground>
 			<TopBar />
@@ -44,9 +55,8 @@ export default function JoinGame() {
 						label='Pseudo'
 						placeholder='Lorem ipsum'
 						value={player.pseudo}
-						onChange={(e) =>
-							setPlayer((prev) => ({ ...prev, pseudo: e.target.value }))
-						}
+						// handle pseudoName saving in localstorage
+						onChange={handlePseudoName}
 						autoComplete='off'
 					/>
 

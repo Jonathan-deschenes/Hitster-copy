@@ -4,12 +4,16 @@ import bcrypt from "bcryptjs-react";
 import generateUniqueId from "generate-unique-id";
 import type { lobbyRowProps, playerProps } from "../types";
 import { findLobbyRowByCode, joinLobby } from "../lib/lobbies";
+import { StorageKeys, StorageUtility } from "./useStorage";
 
 export function useJoinGameForm() {
 	const navigate = useNavigate();
+	// Retrieve saved pseudo in localstorage
+	const savedPseudo =
+		StorageUtility.getItem<string>(StorageKeys.USER_NAME) ?? "";
 	const [player, setPlayer] = useState<playerProps>({
 		id: generateUniqueId(),
-		pseudo: "",
+		pseudo: savedPseudo,
 	});
 
 	const [code, setCode] = useState("");

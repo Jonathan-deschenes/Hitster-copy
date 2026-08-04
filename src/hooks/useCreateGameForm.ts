@@ -5,9 +5,15 @@ import generateUniqueId from "generate-unique-id";
 import type { createGameFormSettingsProps, playerProps } from "../types";
 import { createLobby } from "../lib/lobbies";
 import { musicStyle } from "../constants/createGameOptions";
+import { StorageKeys, StorageUtility } from "./useStorage";
 
 export function useCreateGameForm() {
 	const navigate = useNavigate();
+
+	// Retrieve saved pseudo in localstorage
+	const savedPseudo =
+		StorageUtility.getItem<string>(StorageKeys.USER_NAME) ?? "";
+
 	const [gameFormSettings, setGameFormSettings] =
 		useState<createGameFormSettingsProps>({
 			name: "",
@@ -18,7 +24,7 @@ export function useCreateGameForm() {
 		});
 	const [player, setPlayer] = useState<playerProps>({
 		id: generateUniqueId(),
-		pseudo: "",
+		pseudo: savedPseudo,
 		host: true,
 	});
 	const [isSubmitting, setIsSubmitting] = useState(false);
