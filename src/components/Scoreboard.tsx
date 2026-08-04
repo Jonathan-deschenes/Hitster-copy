@@ -1,17 +1,5 @@
 import type { playerProps } from "../types";
-
-function IconCrown() {
-	return (
-		<svg width="12" height="12" viewBox="0 0 20 20" fill="none">
-			<path
-				d="M3 15.5h14l1.2-8-4.7 3.3L10 6l-3.5 4.8L1.8 7.5 3 15.5Z"
-				stroke="currentColor"
-				strokeWidth="1.4"
-				strokeLinejoin="round"
-			/>
-		</svg>
-	);
-}
+import { IconCrown } from "./icons/PlayerIcons";
 
 const RANK_STYLES: Record<number, string> = {
 	1: "bg-linear-to-br from-[#ffd76a] to-[#ff9f1c] text-bg-deep",

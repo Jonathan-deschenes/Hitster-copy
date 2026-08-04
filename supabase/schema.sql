@@ -7,6 +7,7 @@ create table if not exists public.lobbies (
   is_public boolean not null default true,
   code text not null unique,
   category jsonb not null,
+  game_state jsonb not null default '{"status":"waiting","turn":0,"round":0,"totalRounds":10}'::jsonb,
   players jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now()
 );

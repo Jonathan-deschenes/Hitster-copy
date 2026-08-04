@@ -8,6 +8,7 @@ export type createGameFormSettingsProps = {
 	password: string;
 	category: gameCategoryProps;
 	public: boolean;
+	rounds: number;
 };
 
 export type joinGameFormSettingsProps = {
@@ -21,7 +22,24 @@ export type lobbyProps = {
 	public: boolean;
 	generatedCode: string;
 	category: gameCategoryProps;
+	game_state: gameStateProps;
 	player: playerProps[];
+};
+
+export const GameStatus = {
+	Waiting: "waiting",
+	Playing: "playing",
+	Paused: "paused",
+	Finished: "finished",
+} as const;
+
+export type GameStateEnum = (typeof GameStatus)[keyof typeof GameStatus];
+
+export type gameStateProps = {
+	status: GameStateEnum;
+	turn: number;
+	round: number;
+	totalRounds: number;
 };
 
 export type playerProps = {
@@ -39,6 +57,7 @@ export type lobbyRowProps = {
 	is_public: boolean;
 	code: string;
 	category: gameCategoryProps;
+	game_state: gameStateProps;
 	players: playerProps[];
 	created_at: string;
 };

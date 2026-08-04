@@ -2,33 +2,7 @@ import heroImage from "../assets/hero.png";
 import PageBackground from "../components/PageBackground";
 import TopBar from "../components/TopBar";
 import { PrimaryLink, SecondaryLink } from "../components/Button";
-
-function IconPlus() {
-	return (
-		<svg width='18' height='18' viewBox='0 0 18 18' fill='none'>
-			<path
-				d='M9 3v12M3 9h12'
-				stroke='currentColor'
-				strokeWidth='2'
-				strokeLinecap='round'
-			/>
-		</svg>
-	);
-}
-
-function IconArrowRight() {
-	return (
-		<svg width='18' height='18' viewBox='0 0 18 18' fill='none'>
-			<path
-				d='M3.5 9h11M9.5 4l5 5-5 5'
-				stroke='currentColor'
-				strokeWidth='2'
-				strokeLinecap='round'
-				strokeLinejoin='round'
-			/>
-		</svg>
-	);
-}
+import { IconArrowRight, IconPlus } from "../components/icons/FormIcons";
 
 export default function Home() {
 	return (

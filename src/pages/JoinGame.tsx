@@ -5,124 +5,29 @@ import TextField from "../components/TextField";
 import PasswordField from "../components/PasswordField";
 import PublicLobbyTable from "../components/PublicLobbyTable";
 import { PrimaryButton, SecondaryButton } from "../components/Button";
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import type { lobbyRowProps, playerProps } from "../types";
-import bcrypt from "bcryptjs-react";
-import {
-	findLobbyRowByCode,
-	findPublicLobbies,
-	joinLobby,
-	subscribeToPublicLobbies,
-} from "../lib/lobbies";
-import generateUniqueId from "generate-unique-id";
-
-function IconArrowRight() {
-	return (
-		<svg width='18' height='18' viewBox='0 0 18 18' fill='none'>
-			<path
-				d='M3.5 9h11M9.5 4l5 5-5 5'
-				stroke='currentColor'
-				strokeWidth='2'
-				strokeLinecap='round'
-				strokeLinejoin='round'
-			/>
-		</svg>
-	);
-}
+import { IconArrowRight } from "../components/icons/FormIcons";
+import { usePublicLobbies } from "../hooks/usePublicLobbies";
+import { useJoinGameForm } from "../hooks/useJoinGameForm";
 
 export default function JoinGame() {
-	const navigate = useNavigate();
-	const [player, setPlayer] = useState<playerProps>({
-		id: generateUniqueId(),
-		pseudo: "",
-	});
-
-	const [publicLobbies, setPublicLobbies] = useState<lobbyRowProps[]>([]);
-	const [loadingPublicLobbies, setLoadingPublicLobbies] = useState(true);
-
-	const [code, setCode] = useState("");
-	const [isSearchingCode, setIsSearchingCode] = useState(false);
-
-	const [selectedLobbyRow, setSelectedLobbyRow] =
-		useState<lobbyRowProps | null>(null);
-	const [password, setPassword] = useState("");
-
-	const [isSubmitting, setIsSubmitting] = useState(false);
-	const [error, setError] = useState<string | null>(null);
-
-	useEffect(() => {
-		findPublicLobbies()
-			.then(setPublicLobbies)
-			.finally(() => setLoadingPublicLobbies(false));
-
-		const unsubscribe = subscribeToPublicLobbies(setPublicLobbies);
-
-		return unsubscribe;
-	}, []);
-
-	function selectLobby(row: lobbyRowProps) {
-		setError(null);
-		setPassword("");
-		setSelectedLobbyRow(row);
-	}
-
-	async function handleCodeSearch() {
-		if (!code) return;
-
-		setError(null);
-		setIsSearchingCode(true);
-
-		try {
-			const row = await findLobbyRowByCode(code);
-			if (!row) {
-				setError("Aucun lobby ne correspond à ce code.");
-				return;
-			}
-			selectLobby(row);
-		} catch (err) {
-			console.error(err);
-			setError("Une erreur est survenue, réessaie.");
-		} finally {
-			setIsSearchingCode(false);
-		}
-	}
-
-	async function handleJoin(event: React.FormEvent<HTMLFormElement>) {
-		event.preventDefault();
-		if (!selectedLobbyRow) return;
-
-		setError(null);
-		setIsSubmitting(true);
-
-		try {
-			const passwordMatches = bcrypt.compareSync(
-				password,
-				selectedLobbyRow.password_hash,
-			);
-			if (!passwordMatches) {
-				setError("Mot de passe incorrect.");
-				return;
-			}
-
-			const lobby = await joinLobby(selectedLobbyRow, player);
-			navigate(`/game/${lobby.generatedCode}?current=${player.id}`, {
-				state: lobby,
-			});
-		} catch (err) {
-			console.error(err);
-			setError("Une erreur est survenue, réessaie.");
-		} finally {
-			setIsSubmitting(false);
-		}
-	}
-
-	const canSearchCode = player.pseudo !== "" && code !== "" && !isSearchingCode;
-	const canJoin =
-		player.pseudo !== "" &&
-		password !== "" &&
-		selectedLobbyRow !== null &&
-		!isSubmitting;
+	const { publicLobbies, loading: loadingPublicLobbies } = usePublicLobbies();
+	const {
+		player,
+		setPlayer,
+		code,
+		setCode,
+		isSearchingCode,
+		selectedLobbyRow,
+		password,
+		setPassword,
+		isSubmitting,
+		error,
+		selectLobby,
+		handleCodeSearch,
+		handleJoin,
+		canSearchCode,
+		canJoin,
+	} = useJoinGameForm();
 
 	return (
 		<PageBackground>

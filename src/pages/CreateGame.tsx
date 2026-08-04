@@ -1,5 +1,3 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import PageBackground from "../components/PageBackground";
 import TopBar from "../components/TopBar";
 import FormCard from "../components/FormCard";
@@ -8,85 +6,20 @@ import PasswordField from "../components/PasswordField";
 import SelectField from "../components/SelectField";
 import ToggleField from "../components/ToggleField";
 import { PrimaryButton } from "../components/Button";
-import {
-	type playerProps,
-	type gameCategoryProps,
-	type createGameFormSettingsProps,
-} from "../types";
-import bcrypt from "bcryptjs-react";
-import { createLobby } from "../lib/lobbies";
-import generateUniqueId from "generate-unique-id";
-
-const musicStyle: gameCategoryProps[] = [
-	{ value: "5nhEJxO2ytt0rTdpydTsZV", label: "Summer party" },
-	{ value: "0D5RyoJGBnIZ0bmCvgcDmf", label: "Francophone" },
-	{ value: "6QrVkClF1eJSjb9FDfqtJ8", label: "Rock" },
-];
-
-function IconPlus() {
-	return (
-		<svg width='18' height='18' viewBox='0 0 18 18' fill='none'>
-			<path
-				d='M9 3v12M3 9h12'
-				stroke='currentColor'
-				strokeWidth='2'
-				strokeLinecap='round'
-			/>
-		</svg>
-	);
-}
+import { IconPlus } from "../components/icons/FormIcons";
+import { musicStyle, roundsOptions } from "../constants/createGameOptions";
+import { useCreateGameForm } from "../hooks/useCreateGameForm";
 
 export default function CreateGame() {
-	const navigate = useNavigate();
-	const [gameFormSettings, setGameFormSettings] =
-		useState<createGameFormSettingsProps>({
-			name: "",
-			password: "",
-			category: musicStyle[0],
-			public: true,
-		});
-	const [player, setPlayer] = useState<playerProps>({
-		id: generateUniqueId(),
-		pseudo: "",
-		host: true,
-	});
-	const [isSubmitting, setIsSubmitting] = useState(false);
-	const [error, setError] = useState<string | null>(null);
-
-	const buttonDisabled =
-		gameFormSettings.name === "" ||
-		gameFormSettings.password === "" ||
-		gameFormSettings.category === null ||
-		isSubmitting;
-
-	async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-		event.preventDefault();
-		setError(null);
-		setIsSubmitting(true);
-
-		try {
-			const salt = await bcrypt.genSalt(10);
-			const hashedPassword = bcrypt.hashSync(gameFormSettings.password, salt);
-
-			const lobby = await createLobby(
-				{
-					name: gameFormSettings.name,
-					passwordHash: hashedPassword,
-					category: gameFormSettings.category,
-					public: gameFormSettings.public,
-				},
-				player,
-			);
-
-			navigate(`/game/${lobby.generatedCode}?current=${player.id}`, {
-				state: lobby,
-			});
-		} catch (err) {
-			console.error(err);
-			setError("Impossible de créer le lobby, réessaie.");
-			setIsSubmitting(false);
-		}
-	}
+	const {
+		gameFormSettings,
+		setGameFormSettings,
+		setPlayer,
+		isSubmitting,
+		error,
+		buttonDisabled,
+		handleSubmit,
+	} = useCreateGameForm();
 
 	return (
 		<PageBackground>
@@ -147,6 +80,20 @@ export default function CreateGame() {
 						}}
 						hint='Détermine les morceaux proposés pendant la partie.'
 						options={musicStyle}
+					/>
+
+					<SelectField
+						id='lobby-rounds'
+						label='Nombre de manches'
+						value={String(gameFormSettings.rounds)}
+						onChange={(e) =>
+							setGameFormSettings((prev) => ({
+								...prev,
+								rounds: Number(e.target.value),
+							}))
+						}
+						hint='Nombre de morceaux à deviner avant la fin de la partie.'
+						options={roundsOptions}
 					/>
 
 					<ToggleField
