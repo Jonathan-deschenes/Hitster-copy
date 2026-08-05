@@ -40,7 +40,8 @@ export default function Game() {
 	});
 
 	// Musics queue, synced from the lobby row (generated once at creation)
-	const [musicQueue, currentTrackIndex] = useMusicQueue(lobby?.music_queue);
+	const [musicQueue, currentTrackIndex, incrementCurrentTrackIndex] =
+		useMusicQueue(lobby?.music_queue, code);
 
 	// current game state
 	const gameState = lobby?.game_state;
@@ -50,7 +51,10 @@ export default function Game() {
 	const prevStatus = useRef<GameStateEnum | undefined>(undefined);
 
 	useEffect(() => {
+		// round start came from pause
 		const cameFromPause = prevStatus.current === GameStatus.Paused;
+		// round start came from finished
+		const cameFromFinished = prevStatus.current === GameStatus.Finished;
 		prevStatus.current = gameState?.status;
 
 		if (gameState?.status !== GameStatus.Playing || !code) return;
@@ -59,11 +63,13 @@ export default function Game() {
 			setCounter(5);
 		}
 
+		if (cameFromFinished) incrementCurrentTrackIndex();
+
 		const intervalId = setInterval(() => {
 			setCounter((c) => {
 				if (c <= 1) {
 					clearInterval(intervalId);
-					updateGameStatus(code, GameStatus.Waiting);
+					updateGameStatus(code, GameStatus.Finished);
 					return 0;
 				}
 				return c - 1;
@@ -112,7 +118,9 @@ export default function Game() {
 			<main className='relative z-10 flex flex-col justify-center items-center w-full gap-8 px-6 pt-6 pb-4 sm:px-10lg:px-16'>
 				{(gameState?.status === GameStatus.Playing ||
 					gameState?.status === GameStatus.Paused) && (
-					<h2 className='text-2xl text-white'>{counter}</h2>
+					<h2 className='z-20 absolute bottom-1/2 right-1/2 translate-x-1/2 translate-y-1/2 text-2xl text-lavender/85'>
+						{counter}
+					</h2>
 				)}
 				<div className='flex flex-col-reverse md:grid md:grid-cols-[1fr_auto_1fr] justify-center items-center w-full lg:flex-row lg:items-start lg:justify-center '>
 					<div></div>

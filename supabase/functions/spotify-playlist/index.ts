@@ -97,6 +97,38 @@ async function fetchPage(playlistId: string, token: string, offset: number) {
 	return response.json();
 }
 
+async function fetchTotal(playlistId: string, token: string): Promise<number> {
+	const url = new URL(`https://api.spotify.com/v1/playlists/${playlistId}/items`);
+	url.searchParams.set("fields", "total");
+	url.searchParams.set("limit", "1");
+	url.searchParams.set("offset", "0");
+
+	const response = await fetch(url, {
+		headers: { Authorization: `Bearer ${token}` },
+	});
+
+	if (!response.ok) {
+		throw new Error(`Spotify playlist fetch failed (${response.status}): ${await response.text()}`);
+	}
+
+	const data = await response.json();
+	return data.total as number;
+}
+
+// Picks `count` unique indices out of [0, total) so tracks are drawn from
+// across the whole playlist instead of always the first `count` entries.
+function sampleRandomIndices(total: number, count: number): number[] {
+	if (count >= total) {
+		return Array.from({ length: total }, (_, i) => i);
+	}
+
+	const indices = new Set<number>();
+	while (indices.size < count) {
+		indices.add(Math.floor(Math.random() * total));
+	}
+	return [...indices];
+}
+
 Deno.serve(async (req: Request) => {
 	if (req.method === "OPTIONS") {
 		return new Response("ok", { headers: corsHeaders });
@@ -114,23 +146,26 @@ Deno.serve(async (req: Request) => {
 
 		const token = await getCatalogAccessToken();
 
-		const firstPage = await fetchPage(playlistId, token, 0);
+		const total = await fetchTotal(playlistId, token);
+		const wantedTracks = typeof maxTracks === "number" ? Math.min(maxTracks, total) : total;
+		const selectedIndices = sampleRandomIndices(total, wantedTracks);
 
-		const wantedTracks =
-			typeof maxTracks === "number" ? Math.min(maxTracks, firstPage.total) : firstPage.total;
-		const pagesNeeded = Math.ceil(wantedTracks / PAGE_LIMIT);
-
-		const remainingPages = await Promise.all(
-			Array.from({ length: pagesNeeded - 1 }, (_, i) =>
-				fetchPage(playlistId, token, (i + 1) * PAGE_LIMIT),
-			),
+		const pageOffsets = [
+			...new Set(selectedIndices.map((index) => Math.floor(index / PAGE_LIMIT) * PAGE_LIMIT)),
+		];
+		const pages = await Promise.all(
+			pageOffsets.map((offset) => fetchPage(playlistId, token, offset)),
 		);
-
 		// deno-lint-ignore no-explicit-any
-		const musics = [firstPage, ...remainingPages]
-			.flatMap((page: any) => page.items.map(toMusicItem))
-			.filter((music) => music !== null)
-			.slice(0, wantedTracks);
+		const pageByOffset = new Map(pageOffsets.map((offset, i) => [offset, pages[i]]));
+
+		const musics = selectedIndices
+			.map((index) => {
+				const offset = Math.floor(index / PAGE_LIMIT) * PAGE_LIMIT;
+				const page = pageByOffset.get(offset);
+				return toMusicItem(page.items[index - offset]);
+			})
+			.filter((music) => music !== null);
 
 		return new Response(JSON.stringify({ musics }), {
 			headers: { ...corsHeaders, "Content-Type": "application/json" },
