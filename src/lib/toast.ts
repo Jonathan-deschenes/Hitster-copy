@@ -1,12 +1,13 @@
 import Toastify from "toastify-js";
 import "toastify-js/src/toastify.css";
 
-type ToastVariant = "join" | "leave" | "closed";
+type ToastVariant = "join" | "leave" | "closed" | "error";
 
 const VARIANT_BACKGROUND: Record<ToastVariant, string> = {
 	join: "linear-gradient(135deg, #47bfff, #7e14ff)",
 	leave: "linear-gradient(135deg, #863bff, #7e14ff)",
 	closed: "linear-gradient(135deg, #ff4d6d, #7e14ff)",
+	error: "linear-gradient(135deg, #ff4d6d, #ff8a3d)",
 };
 
 export function showToast(text: string, variant: ToastVariant = "leave") {

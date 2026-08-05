@@ -19,8 +19,10 @@ import HostActionButton from "../components/game/HostActionButton";
 import PlayerAvatarList from "../components/game/PlayerAvatarList";
 import ConnectSpotifyButton from "../components/game/ConnectSpotifyButton";
 import { useMusicQueue } from "../hooks/useMusicQueue";
+import { useSpotifyPlayer } from "../hooks/useSpotifyPlayer";
 import { isSpotifyConnected } from "../lib/spotify/auth";
 import { updateGameStatus } from "../lib/lobbies";
+import { showToast } from "../lib/toast";
 
 export default function Game() {
 	// Get current code and user
@@ -46,9 +48,58 @@ export default function Game() {
 	// current game state
 	const gameState = lobby?.game_state;
 	// current round timer
-	const [counter, setCounter] = useState<number>(5);
+	const [counter, setCounter] = useState<number>(30);
 
 	const prevStatus = useRef<GameStateEnum | undefined>(undefined);
+
+	// Only the host plays audio — their browser is the Spotify Connect
+	// device, acting as the speaker for everyone in the room.
+	const isHost = !!currentPlayer?.host && isSpotifyConnected();
+	const spotifyPlayer = useSpotifyPlayer({ enabled: isHost });
+
+	useEffect(() => {
+		if (spotifyPlayer.error) showToast(spotifyPlayer.error, "error");
+	}, [spotifyPlayer.error]);
+
+	// Drives host-side playback from the synced game state: start a new
+	// track when the queue advances, resume in place after a pause, and
+	// pause on demand. `music_queue.current` updates over a separate
+	// realtime round-trip from `game_state.status`, so this only reacts to
+	// the track actually changing rather than the status transition alone.
+	const currentTrackId = musicQueue[currentTrackIndex]?.id;
+	const playbackRef = useRef<{
+		prevStatus?: GameStateEnum;
+		lastPlayedTrackId?: string;
+	}>({});
+
+	useEffect(() => {
+		if (!isHost || !spotifyPlayer.isReady || !gameState) return;
+
+		const { prevStatus: previousStatus, lastPlayedTrackId } =
+			playbackRef.current;
+		const status = gameState.status;
+
+		if (
+			status === GameStatus.Playing &&
+			currentTrackId &&
+			currentTrackId !== lastPlayedTrackId
+		) {
+			spotifyPlayer.play(currentTrackId);
+			playbackRef.current.lastPlayedTrackId = currentTrackId;
+		} else if (
+			status === GameStatus.Playing &&
+			previousStatus === GameStatus.Paused
+		) {
+			spotifyPlayer.resume();
+		} else if (
+			status === GameStatus.Paused &&
+			previousStatus !== GameStatus.Paused
+		) {
+			spotifyPlayer.pause();
+		}
+
+		playbackRef.current.prevStatus = status;
+	}, [isHost, spotifyPlayer, gameState, currentTrackId]);
 
 	useEffect(() => {
 		// round start came from pause
@@ -60,7 +111,7 @@ export default function Game() {
 		if (gameState?.status !== GameStatus.Playing || !code) return;
 
 		if (!cameFromPause) {
-			setCounter(5);
+			setCounter(30);
 		}
 
 		if (cameFromFinished) incrementCurrentTrackIndex();
