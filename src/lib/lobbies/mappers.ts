@@ -9,5 +9,6 @@ export function rowToLobby(row: lobbyRowProps): lobbyProps {
 		category: row.category,
 		game_state: row.game_state,
 		player: row.players,
+		music_queue: row.music_queue,
 	};
 }

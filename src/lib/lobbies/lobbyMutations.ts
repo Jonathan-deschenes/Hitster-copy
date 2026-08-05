@@ -1,7 +1,15 @@
 import { supabase } from "../supabaseClient";
-import type { gameCategoryProps, lobbyProps, lobbyRowProps, playerProps } from "../../types";
+import type {
+	gameCategoryProps,
+	lobbyProps,
+	lobbyRowProps,
+	playerProps,
+	playlistQueueProps,
+} from "../../types";
 import { rowToLobby } from "./mappers";
 import { getRandomCode } from "./codeGenerator";
+import { fetchPlaylistTracks } from "../spotify/playlist";
+import shuffle from "lodash/shuffle";
 
 const UNIQUE_VIOLATION = "23505";
 
@@ -41,7 +49,20 @@ export async function createLobby(
 			.single();
 
 		if (!error && data) {
-			return rowToLobby(data as lobbyRowProps);
+			const row = data as lobbyRowProps;
+
+			const tracks = await fetchPlaylistTracks(settings.category.value, settings.rounds);
+			const music_queue: playlistQueueProps = { items: shuffle(tracks), current: 0 };
+
+			const { data: withQueue, error: queueError } = await supabase
+				.from("lobbies")
+				.update({ music_queue })
+				.eq("id", row.id)
+				.select()
+				.single();
+
+			if (queueError) throw queueError;
+			return rowToLobby(withQueue as lobbyRowProps);
 		}
 
 		if (error && error.code !== UNIQUE_VIOLATION) {

@@ -24,6 +24,7 @@ export type lobbyProps = {
 	category: gameCategoryProps;
 	game_state: gameStateProps;
 	player: playerProps[];
+	music_queue: playlistQueueProps;
 };
 
 export const GameStatus = {
@@ -60,4 +61,60 @@ export type lobbyRowProps = {
 	game_state: gameStateProps;
 	players: playerProps[];
 	created_at: string;
+	music_queue: playlistQueueProps;
+};
+
+export type spotifyImageProps = {
+	url: string;
+	height: number | null;
+	width: number | null;
+};
+
+export type spotifyArtistProps = {
+	id: string;
+	name: string;
+};
+
+export type spotifyAlbumProps = {
+	id: string;
+	name: string;
+	release_date: string;
+	images: spotifyImageProps[];
+};
+
+export type spotifyTrackProps = {
+	id: string;
+	name: string;
+	duration_ms: number;
+	artists: spotifyArtistProps[];
+	album: spotifyAlbumProps;
+};
+
+// via GET /v1/playlists/{playlist_id}/items
+export type spotifyPlaylistItemProps = {
+	added_at: string;
+	is_local: boolean;
+	track: spotifyTrackProps;
+};
+
+export type spotifyPlaylistItemsPageProps = {
+	items: spotifyPlaylistItemProps[];
+	total: number;
+	limit: number;
+	offset: number;
+	next: string | null;
+};
+
+export type musicItemsProps = {
+	id: string;
+	name: string;
+	artist: string[];
+	duration: number;
+	cover: spotifyImageProps;
+	releaseDate: string;
+};
+
+export type playlistQueueProps = {
+	items: musicItemsProps[];
+	current: number;
 };

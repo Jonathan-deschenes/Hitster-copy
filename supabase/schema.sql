@@ -41,3 +41,25 @@ alter publication supabase_realtime add table public.lobbies;
 -- with UPDATE/DELETE realtime events, so a `filter: code=eq.xxxx` on a DELETE
 -- would never match. FULL replica identity includes every column instead.
 alter table public.lobbies replica identity full;
+
+-- Stores the Spotify "catalog" service account's refresh token. Spotify's
+-- PKCE refresh tokens are single-use: every refresh call invalidates the
+-- current one and returns a new one, so it must live in a row the
+-- spotify-playlist Edge Function can update after every use, not a static
+-- secret. Single-row table, id is always 1.
+create table if not exists public.spotify_catalog_token (
+  id smallint primary key default 1,
+  refresh_token text not null,
+  updated_at timestamptz not null default now(),
+  constraint spotify_catalog_token_singleton check (id = 1)
+);
+
+-- RLS enabled with no policies: unreachable via the public anon/publishable
+-- key. Only the Edge Function (using the service role key) can read/write it.
+alter table public.spotify_catalog_token enable row level security;
+
+-- Persists the shuffled music queue on the lobby row (shape: playlistQueueProps)
+-- so every client sees the same queue via realtime, instead of each client
+-- fetching/shuffling its own copy from Spotify.
+alter table public.lobbies
+  add column if not exists music_queue jsonb not null default '{"items":[],"current":0}'::jsonb;
