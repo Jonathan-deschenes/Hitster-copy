@@ -45,7 +45,11 @@ export default function HostActionButton({
 		hostAction.variant === "secondary" ? SecondaryButton : PrimaryButton;
 
 	return (
-		<ButtonComponent type='submit' className='w-fit' onClick={onClick}>
+		<ButtonComponent
+			type='submit'
+			className='w-fit active:scale-[0.98]'
+			onClick={onClick}
+		>
 			{hostAction.icon}
 			{hostAction.label}
 		</ButtonComponent>

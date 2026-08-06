@@ -1,12 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { playerProps } from "../../types";
 import { IconCrown, IconKick, IconMore } from "../icons/PlayerIcons";
-
-const RANK_STYLES: Record<number, string> = {
-	1: "bg-linear-to-br from-[#ffd76a] to-[#ff9f1c] text-bg-deep",
-	2: "bg-linear-to-br from-[#e6e6e6] to-[#aeaeae] text-bg-deep",
-	3: "bg-linear-to-br from-[#e3a06a] to-[#a8663a] text-bg-deep",
-};
+import { RANK_STYLES } from "./rankStyles";
 
 interface ScoreboardProps {
 	players: playerProps[];
@@ -45,7 +40,7 @@ export default function Scoreboard({
 	const ranked = [...players].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
 	return (
-		<ol className='flex flex-col gap-2'>
+		<ol className='flex h-full flex-col gap-2 overflow-y-auto pr-1'>
 			{ranked.map((player, index) => {
 				const rank = index + 1;
 				const isYou = player.id === currentPlayerId;
@@ -105,7 +100,10 @@ export default function Scoreboard({
 							<div className='absolute top-full right-4 z-40 mt-1 flex w-40 flex-col overflow-hidden rounded-xl border border-lavender/14 bg-bg-deep shadow-lg'>
 								<button
 									type='button'
-									onClick={() => promotionAction(player.id)}
+									onClick={() => {
+										promotionAction(player.id);
+										setMenuPlayerId(null);
+									}}
 									className='flex items-center gap-2 px-3 py-2.5 text-left text-[0.82rem] text-lavender/85 transition-colors hover:bg-lavender/10'
 								>
 									<IconCrown />
@@ -113,7 +111,10 @@ export default function Scoreboard({
 								</button>
 								<button
 									type='button'
-									onClick={() => kickAction(player.id)}
+									onClick={() => {
+										kickAction(player.id);
+										setMenuPlayerId(null);
+									}}
 									className='flex items-center gap-2 px-3 py-2.5 text-left text-[0.82rem] text-red-400 transition-colors hover:bg-red-500/10'
 								>
 									<IconKick />

@@ -8,17 +8,20 @@ import {
 import PageBackground from "../components/PageBackground";
 import TopBar from "../components/TopBar";
 import { GameStatus, type GameStateEnum, type lobbyProps } from "../types";
-import { PrimaryButton } from "../components/Button";
+import { PrimaryButton, SecondaryButton } from "../components/Button";
 import { useLobbyRealtime } from "../hooks/useLobbyRealtime";
 import { useGameActions } from "../hooks/useGameActions";
 import LobbyHeaderBadges from "../components/game/LobbyHeaderBadges";
 import AlbumArtPanel from "../components/game/AlbumArtPanel";
 import ScoreboardPanel from "../components/game/ScoreboardPanel";
+import Scoreboard from "../components/game/Scoreboard";
 import GameStatusBadge from "../components/game/GameStatusBadge";
 import HostActionButton from "../components/game/HostActionButton";
 import PlayerAvatarList from "../components/game/PlayerAvatarList";
 import ConnectSpotifyButton from "../components/game/ConnectSpotifyButton";
 import SpotifyVolumeControl from "../components/game/SpotifyVolumeControl";
+import Modal from "../components/Modal";
+import { IconClose } from "../components/icons/GameIcons";
 import { useMusicQueue } from "../hooks/useMusicQueue";
 import { useSpotifyPlayer } from "../hooks/useSpotifyPlayer";
 import { isSpotifyConnected } from "../lib/spotify/auth";
@@ -60,6 +63,8 @@ export default function Game() {
 	const gameState = lobby?.game_state;
 	// current round timer
 	const [counter, setCounter] = useState<number>(30);
+	// host-only, mobile-only player management modal (kick/promote)
+	const [manageOpen, setManageOpen] = useState(false);
 
 	const prevStatus = useRef<GameStateEnum | undefined>(undefined);
 
@@ -173,39 +178,42 @@ export default function Game() {
 				isPublic={lobby.public}
 			/>
 
-			<main className='relative z-10 flex flex-col justify-center items-center w-full gap-8 px-6 pt-6 pb-4 sm:px-10lg:px-16'>
-				{(gameState?.status === GameStatus.Playing ||
-					gameState?.status === GameStatus.Paused) && (
-					<h2 className='z-20 absolute bottom-1/2 right-1/2 translate-x-1/2 translate-y-1/2 text-2xl text-lavender/85'>
-						{counter}
-					</h2>
-				)}
-				<div className='flex flex-col-reverse md:grid md:grid-cols-[1fr_auto_1fr] justify-center items-center w-full lg:flex-row lg:items-start lg:justify-center '>
-					<div></div>
-					<AlbumArtPanel
-						key={currentTrackId}
-						currentTrack={musicQueue[currentTrackIndex]}
-						gameState={gameState}
-					/>
+			<main className='relative z-10 flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-4 px-4 py-2 sm:px-8 lg:px-12'>
+				<div className='flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-6 md:flex-row md:items-stretch'>
+					<div className='relative flex shrink-0 items-center justify-center'>
+						{(gameState?.status === GameStatus.Playing ||
+							gameState?.status === GameStatus.Paused) && (
+							<h2 className='pointer-events-none z-20 absolute inset-0 flex items-center justify-center text-2xl text-lavender/85'>
+								{counter}
+							</h2>
+						)}
+						<AlbumArtPanel
+							key={currentTrackId}
+							currentTrack={musicQueue[currentTrackIndex]}
+							gameState={gameState}
+						/>
+					</div>
 					<ScoreboardPanel
 						players={scoredPlayers}
 						currentPlayerId={current}
 						canManagePlayers={!!currentPlayer?.host}
 						kickAction={handlePlayerKick}
 						promotionAction={handlePlayerPromotion}
+						className='hidden md:flex'
 					/>
 				</div>
 			</main>
 
-			<footer className='relative z-10 flex flex-col-reverse md:flex-row justify-center px-4 pt-4 pb-7 sm:px-12'>
+			<footer className='relative z-10 flex shrink-0 flex-col items-center gap-3 px-4 pt-2 pb-4 sm:px-12'>
 				<PrimaryButton
-					type='submit'
-					className='hidden md:absolute m-4 mt-8 md:mt-0 md:w-fit bottom-0 left-0'
+					type='button'
+					className='order-last w-full sm:w-auto md:absolute md:bottom-4 md:left-4 md:order-none md:w-fit'
 					onClick={handleLeaving}
 				>
 					Quitter la partie
 				</PrimaryButton>
-				<div className='flex flex-col items-center gap-4'>
+
+				<div className='flex flex-wrap items-center justify-center gap-3'>
 					{gameState && <GameStatusBadge gameState={gameState} />}
 
 					{currentPlayer?.host && !isSpotifyConnected() && (
@@ -226,9 +234,52 @@ export default function Game() {
 						/>
 					)}
 
-					<PlayerAvatarList players={lobby.player} currentPlayerId={current} />
+					{currentPlayer?.host && (
+						<SecondaryButton
+							type='button'
+							className='md:hidden'
+							onClick={() => setManageOpen(true)}
+						>
+							Gérer les joueurs
+						</SecondaryButton>
+					)}
 				</div>
+
+				<PlayerAvatarList players={scoredPlayers} currentPlayerId={current} />
 			</footer>
+
+			<Modal
+				open={manageOpen}
+				onClose={() => setManageOpen(false)}
+				labelledBy='manage-players-title'
+				size='md'
+			>
+				<div className='flex shrink-0 items-center justify-between gap-4 p-6 pb-4'>
+					<h2
+						id='manage-players-title'
+						className='font-display text-lg font-bold'
+					>
+						Gérer les joueurs
+					</h2>
+					<button
+						type='button'
+						onClick={() => setManageOpen(false)}
+						aria-label='Fermer'
+						className='inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-lavender/14 bg-lavender/[0.04] text-lavender/68 transition-colors hover:border-purple-soft hover:bg-purple/[0.14] hover:text-white'
+					>
+						<IconClose />
+					</button>
+				</div>
+				<div className='min-h-0 flex-1 overflow-y-auto px-6 pb-6'>
+					<Scoreboard
+						players={scoredPlayers}
+						currentPlayerId={current}
+						canManagePlayers={!!currentPlayer?.host}
+						kickAction={handlePlayerKick}
+						promotionAction={handlePlayerPromotion}
+					/>
+				</div>
+			</Modal>
 		</PageBackground>
 	);
 }

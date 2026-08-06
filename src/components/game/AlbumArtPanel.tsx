@@ -25,12 +25,19 @@ export default function AlbumArtPanel({
 	// A finished round always shows the answer, even without a manual reveal.
 	const revealed = reveal || gameState?.status === GameStatus.Finished;
 	const year = currentTrack ? releaseYear(currentTrack.releaseDate) : null;
+	const isPlaying = gameState?.status === GameStatus.Playing;
 
 	return (
-		<div className='relative w-[min(360px,78vw)] shrink-0'>
+		<div className='relative w-[min(360px,78vw,52dvh)] shrink-0'>
 			<div className="absolute top-[14%] right-[-12%] hidden aspect-square w-[62%] rounded-full bg-[repeating-radial-gradient(circle_at_50%_50%,#16101f_0,#16101f_3px,#1f1730_4px,#1f1730_7px)] shadow-[0_20px_45px_-12px_rgba(0,0,0,0.65)] after:absolute after:inset-[38%] after:rounded-full after:bg-linear-to-br after:from-purple-light after:to-purple after:content-[''] sm:block" />
 
-			<div className='group relative z-10 block aspect-square w-full overflow-hidden rounded-3xl border border-lavender/14 bg-[linear-gradient(160deg,rgba(237,230,255,0.08),rgba(8,6,13,0.5))] shadow-[0_40px_80px_-20px_rgba(126,20,255,0.5)] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-accent-blue disabled:cursor-default'>
+			<div
+				className={`group relative z-10 block aspect-square w-full overflow-hidden rounded-3xl border transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-accent-blue disabled:cursor-default ${
+					isPlaying
+						? "border-accent-blue/50 bg-[linear-gradient(160deg,rgba(237,230,255,0.08),rgba(8,6,13,0.5))] motion-safe:animate-pulse-glow"
+						: "border-lavender/14 bg-[linear-gradient(160deg,rgba(237,230,255,0.08),rgba(8,6,13,0.5))] shadow-[0_40px_80px_-20px_rgba(126,20,255,0.5)]"
+				}`}
+			>
 				{coverImage ? (
 					<img
 						src={coverImage.url}

@@ -30,9 +30,9 @@ export default function PublicLobbyTable({
 				className="w-full rounded-xl border border-lavender/14 bg-bg-deep/55 px-4 py-3 text-[0.9rem] text-inherit transition-colors duration-200 placeholder:text-lavender/44 hover:border-lavender/28 focus:border-purple-soft focus:bg-purple/[0.08] focus:shadow-[0_0_0_3px_rgba(126,20,255,0.22)] focus:outline-none"
 			/>
 
-			<div className="overflow-x-auto rounded-xl border border-lavender/14">
+			<div className="max-h-[260px] overflow-y-auto overflow-x-auto rounded-xl border border-lavender/14">
 				<table className="w-full min-w-[420px] border-collapse text-left text-[0.9rem]">
-					<thead>
+					<thead className="sticky top-0 z-10 bg-bg-deep">
 						<tr className="border-b border-lavender/14 text-[0.78rem] text-lavender/44 uppercase">
 							<th className="px-4 py-3 font-medium">Nom</th>
 							<th className="px-4 py-3 font-medium">Catégorie</th>

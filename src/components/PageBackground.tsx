@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 export default function PageBackground({ children }: { children: ReactNode }) {
   return (
-    <div className="relative flex min-h-screen flex-col overflow-hidden bg-bg-deep">
+    <div className="relative flex h-dvh flex-col overflow-hidden bg-bg-deep">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -top-35 -left-30 z-0 h-120 w-120 animate-drift-a rounded-full bg-purple opacity-[0.55] blur-[100px] motion-reduce:animate-none"

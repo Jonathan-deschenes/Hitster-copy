@@ -15,6 +15,17 @@
   --animate-drift-a: drift-a 18s ease-in-out infinite;
   --animate-drift-b: drift-b 22s ease-in-out infinite;
   --animate-drift-a-rev: drift-a 26s ease-in-out infinite reverse;
+  --animate-pulse-glow: pulse-glow 2.2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 40px 80px -20px rgba(126, 20, 255, 0.5);
+  }
+  50% {
+    box-shadow: 0 40px 90px -14px rgba(71, 191, 255, 0.65);
+  }
 }
 
 @keyframes float {
@@ -61,5 +72,19 @@ body {
 }
 
 #root {
-  min-height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* Toastify's built-in mobile breakpoint (360px) is narrower than most
+   phones, so its `max-width: calc(50% - 20px)` keeps toasts cramped
+   and wrapping badly. Widen them on real mobile viewports instead. */
+@media (max-width: 640px) {
+  .toastify.toastify-right,
+  .toastify.toastify-left {
+    left: 16px;
+    right: 16px;
+    max-width: none;
+    width: auto;
+  }
 }

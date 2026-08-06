@@ -85,6 +85,33 @@ export function IconVolume() {
 	);
 }
 
+export function IconChevronDown() {
+	return (
+		<svg width='16' height='16' viewBox='0 0 18 18' fill='none'>
+			<path
+				d='M4.5 7l4.5 4.5L13.5 7'
+				stroke='currentColor'
+				strokeWidth='1.6'
+				strokeLinecap='round'
+				strokeLinejoin='round'
+			/>
+		</svg>
+	);
+}
+
+export function IconClose() {
+	return (
+		<svg width='16' height='16' viewBox='0 0 18 18' fill='none'>
+			<path
+				d='M4.5 4.5l9 9M13.5 4.5l-9 9'
+				stroke='currentColor'
+				strokeWidth='2'
+				strokeLinecap='round'
+			/>
+		</svg>
+	);
+}
+
 export function IconNextRound() {
 	return (
 		<svg width='16' height='16' viewBox='0 0 18 18' fill='none'>

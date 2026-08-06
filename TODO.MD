@@ -33,12 +33,6 @@
 
 ## UI/UX
 
-[ ] Leaderboard caché avec clics  
+[X] Leaderboard caché avec clics  
 [ ] Options parties caché avec clics  
-[ ] Réactivité mobile
-
-## Info bulle
-
-[ ] Fonctionnement spotify  
-[ ] Options de la partie  
-[ ] Tutoriel (stocker localstorage)
+[X] Réactivité mobile

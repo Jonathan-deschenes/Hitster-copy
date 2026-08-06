@@ -1,37 +1,64 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import heroImage from "../assets/hero.png";
 import PageBackground from "../components/PageBackground";
 import TopBar from "../components/TopBar";
-import { PrimaryLink, SecondaryLink } from "../components/Button";
+import { PrimaryButton, SecondaryButton } from "../components/Button";
 import { IconArrowRight, IconPlus } from "../components/icons/FormIcons";
+import PlayModal, { type PlayModalTab } from "../components/PlayModal";
 
-export default function Home() {
+interface HomeProps {
+	initialTab?: PlayModalTab;
+}
+
+export default function Home({ initialTab }: HomeProps) {
+	const navigate = useNavigate();
+	const [tab, setTab] = useState<PlayModalTab>(initialTab ?? "create");
+	const [open, setOpen] = useState(!!initialTab);
+
+	const openModal = (nextTab: PlayModalTab) => {
+		setTab(nextTab);
+		setOpen(true);
+	};
+
+	const closeModal = () => {
+		setOpen(false);
+		if (initialTab) navigate("/", { replace: true });
+	};
+
 	return (
 		<PageBackground>
 			<TopBar />
 
-			<main className='relative z-10 mx-auto flex w-full max-w-300 flex-1 flex-col items-center gap-12 px-6 pt-4 pb-16 text-center sm:px-10 md:flex-row md:justify-between md:pt-8 md:text-left lg:px-16'>
+			<main className='relative z-10 mx-auto flex w-full max-w-300 min-h-0 flex-1 flex-col items-center justify-center gap-10 px-6 text-center sm:px-10 md:flex-row md:justify-between md:text-left lg:px-16'>
 				<div className='flex max-w-full flex-col items-center md:max-w-140 md:items-start'>
-					<h1 className='mb-5 bg-linear-to-br from-white via-lavender to-accent-blue bg-clip-text font-display text-[clamp(2.5rem,5vw,3.75rem)] leading-[1.06] font-bold tracking-[-0.02em] text-transparent'>
+					<h1 className='mb-5 bg-linear-to-br from-white via-lavender to-accent-blue bg-clip-text font-display text-[clamp(2.2rem,5vw,3.75rem)] leading-[1.06] font-bold tracking-[-0.02em] text-transparent'>
 						Hitster pour les bluds
 					</h1>
-					<p className='mx-auto mb-9 max-w-115 text-[1.05rem] leading-[1.65] text-lavender/68 md:mx-0'>
+					<p className='mx-auto mb-8 max-w-115 text-[1.05rem] leading-[1.65] text-lavender/68 md:mx-0'>
 						Tannée de dépenser tout son argent pour jouer aux 4 000 différentes
 						version de Hitster? Voici Bludster, une copie du jeu de musique
 						créer par Jonathan
 					</p>
 					<div className='flex w-full flex-col items-stretch gap-4 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-center md:justify-start'>
-						<PrimaryLink to='/create' className='w-full sm:w-auto'>
+						<PrimaryButton
+							className='w-full sm:w-auto'
+							onClick={() => openModal("create")}
+						>
 							<IconPlus />
 							Créer une partie
-						</PrimaryLink>
-						<SecondaryLink to='/join' className='w-full sm:w-auto'>
+						</PrimaryButton>
+						<SecondaryButton
+							className='w-full sm:w-auto'
+							onClick={() => openModal("join")}
+						>
 							<IconArrowRight />
 							Rejoindre une partie
-						</SecondaryLink>
+						</SecondaryButton>
 					</div>
 				</div>
 
-				<div className='order-first w-[min(280px,65vw)] shrink-0 md:order-0 md:w-[min(360px,40vw)]'>
+				<div className='order-first w-[min(240px,55vw,32dvh)] shrink-0 md:order-0 md:w-[min(360px,40vw,42dvh)]'>
 					<img
 						src={heroImage}
 						alt=''
@@ -40,9 +67,16 @@ export default function Home() {
 				</div>
 			</main>
 
-			<footer className='relative z-10 border-t border-lavender/14 px-6 pt-6 pb-8 text-center text-[0.8rem] text-lavender/44 sm:px-10 lg:px-16'>
+			<footer className='relative z-10 shrink-0 border-t border-lavender/14 px-6 py-3 text-center text-[0.8rem] text-lavender/44 sm:px-10 lg:px-16'>
 				<p>Bludster · v0.1</p>
 			</footer>
+
+			<PlayModal
+				open={open}
+				tab={tab}
+				onTabChange={setTab}
+				onClose={closeModal}
+			/>
 		</PageBackground>
 	);
 }
