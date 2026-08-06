@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { IconMusic } from "../icons/GameIcons";
 import { GameStatus } from "../../types";
 import type { gameStateProps, musicItemsProps } from "../../types";
@@ -18,12 +18,9 @@ export default function AlbumArtPanel({
 	gameState,
 }: AlbumArtPanelProps) {
 	const coverImage = currentTrack?.cover;
-	const [reveal, setReveal] = useState(false);
-
-	// Each new track starts hidden — guess first, reveal after.
-	useEffect(() => {
-		setReveal(false);
-	}, [currentTrack?.id]);
+	// Remounted via `key={currentTrack?.id}` from the parent, so this starts
+	// fresh (hidden) for every new track without needing an effect.
+	const [reveal] = useState(false);
 
 	// A finished round always shows the answer, even without a manual reveal.
 	const revealed = reveal || gameState?.status === GameStatus.Finished;

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import type { musicItemsProps, playlistQueueProps } from "../types";
 import { setCurrentTrackIndex } from "../lib/lobbies";
 
@@ -13,11 +13,11 @@ export function useMusicQueue(musicQueue?: playlistQueueProps, code?: string) {
 	);
 	const current = musicQueue?.current ?? 0;
 
-	async function incrementCurrentTrackIndex() {
+	const incrementCurrentTrackIndex = useCallback(async () => {
 		if (!code) return;
 		const next = Math.min(current + 1, Math.max(musics.length - 1, 0));
 		await setCurrentTrackIndex(code, next);
-	}
+	}, [code, current, musics.length]);
 
 	return [musics, current, incrementCurrentTrackIndex] as const;
 }

@@ -35,8 +35,18 @@ export default function Game() {
 	const location = useLocation();
 	const initialLobby = (location.state as lobbyProps | null) ?? null;
 
-	const { lobby, notFound } = useLobbyRealtime(code, current, initialLobby);
-	const { currentPlayer, handleLeaving, hostActionByStatus } = useGameActions({
+	const { lobby, notFound, kicked } = useLobbyRealtime(
+		code,
+		current,
+		initialLobby,
+	);
+	const {
+		currentPlayer,
+		handleLeaving,
+		handlePlayerKick,
+		handlePlayerPromotion,
+		hostActionByStatus,
+	} = useGameActions({
 		code,
 		lobby,
 		currentPlayerId: current,
@@ -122,7 +132,7 @@ export default function Game() {
 		}, 1000);
 
 		return () => clearInterval(intervalId);
-	}, [gameState, code]);
+	}, [gameState, code, incrementCurrentTrackIndex]);
 
 	const scoredPlayers = useMemo(
 		() =>
@@ -150,6 +160,9 @@ export default function Game() {
 		);
 	}
 
+	// handle redirection for kicked player
+	if (kicked) return <Navigate to={"/"} />;
+
 	return (
 		<PageBackground>
 			<TopBar />
@@ -170,10 +183,17 @@ export default function Game() {
 				<div className='flex flex-col-reverse md:grid md:grid-cols-[1fr_auto_1fr] justify-center items-center w-full lg:flex-row lg:items-start lg:justify-center '>
 					<div></div>
 					<AlbumArtPanel
+						key={currentTrackId}
 						currentTrack={musicQueue[currentTrackIndex]}
 						gameState={gameState}
 					/>
-					<ScoreboardPanel players={scoredPlayers} currentPlayerId={current} />
+					<ScoreboardPanel
+						players={scoredPlayers}
+						currentPlayerId={current}
+						canManagePlayers={!!currentPlayer?.host}
+						kickAction={handlePlayerKick}
+						promotionAction={handlePlayerPromotion}
+					/>
 				</div>
 			</main>
 

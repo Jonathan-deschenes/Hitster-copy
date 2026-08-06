@@ -7,34 +7,32 @@ import TopBar from "../components/TopBar";
 export default function SpotifyCallback() {
 	const [searchParams] = useSearchParams();
 	const navigate = useNavigate();
-	const [error, setError] = useState<string | null>(null);
+	const [asyncError, setAsyncError] = useState<string | null>(null);
 	const ranOnce = useRef(false);
 
+	const code = searchParams.get("code");
+	const state = searchParams.get("state");
+	const spotifyError = searchParams.get("error");
+
+	const paramsError = spotifyError
+		? "Connexion Spotify refusée."
+		: !code || !state
+			? "Réponse Spotify invalide."
+			: null;
+
 	useEffect(() => {
-		if (ranOnce.current) return;
+		if (ranOnce.current || paramsError || !code || !state) return;
 		ranOnce.current = true;
-
-		const code = searchParams.get("code");
-		const state = searchParams.get("state");
-		const spotifyError = searchParams.get("error");
-
-		if (spotifyError) {
-			setError("Connexion Spotify refusée.");
-			return;
-		}
-
-		if (!code || !state) {
-			setError("Réponse Spotify invalide.");
-			return;
-		}
 
 		completeSpotifyLogin(code, state)
 			.then((returnTo) => navigate(returnTo, { replace: true }))
 			.catch((err) => {
 				console.error(err);
-				setError("Impossible de finaliser la connexion Spotify.");
+				setAsyncError("Impossible de finaliser la connexion Spotify.");
 			});
-	}, [searchParams, navigate]);
+	}, [code, state, paramsError, navigate]);
+
+	const error = paramsError ?? asyncError;
 
 	return (
 		<PageBackground>

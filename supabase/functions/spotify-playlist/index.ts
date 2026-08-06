@@ -62,8 +62,20 @@ async function getCatalogAccessToken(): Promise<string> {
 	return data.access_token as string;
 }
 
-// deno-lint-ignore no-explicit-any
-function toMusicItem(playlistItem: any) {
+type SpotifyPlaylistItem = {
+	item?: {
+		id: string;
+		name: string;
+		duration_ms: number;
+		artists?: { name: string }[];
+		album?: {
+			release_date?: string;
+			images?: { url: string; width?: number; height?: number }[];
+		};
+	};
+};
+
+function toMusicItem(playlistItem: SpotifyPlaylistItem) {
 	const track = playlistItem?.item;
 
 	// Local files, region-unavailable, or removed tracks show up with no

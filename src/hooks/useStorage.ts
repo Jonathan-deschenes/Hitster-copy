@@ -11,7 +11,9 @@ class StorageUtility {
 		try {
 			const jsonValue = JSON.stringify(value);
 			localStorage.setItem(key, jsonValue);
-		} catch (e) {}
+		} catch {
+			/* localStorage unavailable */
+		}
 	}
 
 	static getItem<T>(key: StorageKeysType): T | null {
@@ -19,7 +21,7 @@ class StorageUtility {
 			const jsonValue = localStorage.getItem(key);
 			const value = jsonValue != null ? JSON.parse(jsonValue) : null;
 			return value;
-		} catch (e) {
+		} catch {
 			return null;
 		}
 	}
@@ -27,32 +29,37 @@ class StorageUtility {
 	static removeItem(key: StorageKeysType): void {
 		try {
 			localStorage.removeItem(key);
-		} catch (e) {}
+		} catch {
+			/* localStorage unavailable */
+		}
 	}
 
 	static clear(): void {
 		try {
 			localStorage.clear();
-		} catch (error) {}
+		} catch {
+			/* localStorage unavailable */
+		}
 	}
 
 	static getMultipleItems(
 		keys: Array<StorageKeysType>,
-	): Record<StorageKeysType, any> | undefined {
+	): Record<StorageKeysType, unknown> | undefined {
 		try {
-			const result = localStorage.multiGet(keys);
-			const final = result.reduce(
-				(pre: any, curr: any[]) => {
-					const val = curr[1] ? JSON.parse(curr[1]) : null;
-					return {
-						...pre,
-						[curr[0]]: val,
-					};
-				},
-				{} as Record<StorageKeysType, any>,
+			const result: [string, string | null][] = keys.map((key) => [
+				key,
+				localStorage.getItem(key),
+			]);
+			return result.reduce(
+				(pre, [key, raw]) => ({
+					...pre,
+					[key]: raw ? JSON.parse(raw) : null,
+				}),
+				{} as Record<StorageKeysType, unknown>,
 			);
-			return final;
-		} catch (err) {}
+		} catch {
+			return undefined;
+		}
 	}
 }
 

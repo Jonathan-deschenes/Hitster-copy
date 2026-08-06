@@ -7,6 +7,7 @@ import {
 	updateGameStatus,
 	updateRound,
 } from "../lib/lobbies";
+import { promotePlayer } from "../lib/lobbies/lobbyMutations";
 
 interface UseGameActionsParams {
 	code?: string;
@@ -34,6 +35,19 @@ export function useGameActions({
 		}
 
 		navigate("/");
+	}
+
+	async function handlePlayerKick(playerId: string) {
+		if (!code || !lobby || !playerId) return;
+
+		if (currentPlayer?.host) await leaveLobby(code, playerId);
+	}
+
+	async function handlePlayerPromotion(playerId: string) {
+		if (!code || !lobby || !playerId) return;
+
+		if (currentPlayer?.host && playerId !== currentPlayer?.id)
+			await promotePlayer(code, playerId);
 	}
 
 	async function handleStartGame() {
@@ -64,5 +78,11 @@ export function useGameActions({
 		[GameStatus.Finished]: handleNewRound,
 	};
 
-	return { currentPlayer, handleLeaving, hostActionByStatus };
+	return {
+		currentPlayer,
+		handleLeaving,
+		handlePlayerKick,
+		handlePlayerPromotion,
+		hostActionByStatus,
+	};
 }

@@ -11,6 +11,7 @@ export function useLobbyRealtime(
 	const hadInitialLobbyRef = useRef(initialLobby != null);
 	const [lobby, setLobby] = useState<lobbyProps | null>(() => initialLobby);
 	const previousPlayersRef = useRef<playerProps[]>(initialLobby?.player ?? []);
+	const [kicked, setKicked] = useState<boolean>(false);
 	const [notFound, setNotFound] = useState(false);
 
 	useEffect(() => {
@@ -37,6 +38,35 @@ export function useLobbyRealtime(
 					previousPlayersRef.current.map((player) => player.id),
 				);
 				const nextIds = new Set(updated.player.map((player) => player.id));
+
+				// handle kicked player
+				const wasKicked =
+					currentPlayerId != null &&
+					previousIds.has(currentPlayerId) &&
+					!nextIds.has(currentPlayerId);
+
+				if (wasKicked) {
+					showToast("Vous avez été exclu du lobby.", "closed");
+					setKicked(true);
+				}
+
+				// handle player promotion
+				const previousHost = previousPlayersRef.current.find((p) => p.host);
+				const newHost = updated.player.find((p) => p.host);
+
+				console.log("[promotion debug]", {
+					previousHostId: previousHost?.id,
+					newHostId: newHost?.id,
+					previousPlayers: previousPlayersRef.current,
+					updatedPlayers: updated.player,
+				});
+
+				if (previousHost?.id !== newHost?.id) {
+					showToast(
+						`${newHost?.pseudo || "Un joueur"} a été promu hôte de la partie.`,
+						"join",
+					);
+				}
 
 				for (const player of updated.player) {
 					if (!previousIds.has(player.id) && player.id !== currentPlayerId) {
@@ -74,5 +104,5 @@ export function useLobbyRealtime(
 		};
 	}, [code, currentPlayerId]);
 
-	return { lobby, notFound };
+	return { lobby, notFound, kicked };
 }

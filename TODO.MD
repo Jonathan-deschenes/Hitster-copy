@@ -2,9 +2,9 @@
 
 ## Donnée du lobby
 
-[ ] Promotion de l'hote au choix ou a la deconnexion  
+[X] Promotion de l'hote au choix ou a la deconnexion  
 [ ] Suppression lobby vide  
-[ ] Possibilité exlusion d'un joueur
+[X] Possibilité exlusion d'un joueur
 
 ## Option de la partie
 
@@ -29,7 +29,7 @@
 
 ## Connexion Spotify
 
-[ ] Garder la connexion apparails (localstorage) ou si impossible toujours demander acces a chaque lobby
+[X] Garder la connexion apparails (localstorage) ou si impossible toujours demander acces a chaque lobby
 
 ## UI/UX
 

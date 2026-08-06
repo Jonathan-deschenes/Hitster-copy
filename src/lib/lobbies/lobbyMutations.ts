@@ -51,8 +51,14 @@ export async function createLobby(
 		if (!error && data) {
 			const row = data as lobbyRowProps;
 
-			const tracks = await fetchPlaylistTracks(settings.category.value, settings.rounds);
-			const music_queue: playlistQueueProps = { items: shuffle(tracks), current: 0 };
+			const tracks = await fetchPlaylistTracks(
+				settings.category.value,
+				settings.rounds,
+			);
+			const music_queue: playlistQueueProps = {
+				items: shuffle(tracks),
+				current: 0,
+			};
 
 			const { data: withQueue, error: queueError } = await supabase
 				.from("lobbies")
@@ -131,4 +137,35 @@ export async function deleteLobby(code: string): Promise<void> {
 			`Aucun lobby avec le code ${code} n'a été supprimé (vérifie la policy RLS "delete" sur la table lobbies).`,
 		);
 	}
+}
+
+export async function promotePlayer(
+	code: string,
+	playerId: string,
+): Promise<lobbyProps | null> {
+	const { data, error: fetchError } = await supabase
+		.from("lobbies")
+		.select()
+		.eq("code", code)
+		.maybeSingle();
+
+	if (fetchError) throw fetchError;
+	if (!data) return null;
+
+	// update via js the player array
+	const playersFetch: playerProps[] = data.players;
+	const updatedPlayers = playersFetch.map((p) => ({
+		...p,
+		host: p.id === playerId,
+	}));
+
+	const { data: updated, error } = await supabase
+		.from("lobbies")
+		.update({ players: updatedPlayers })
+		.eq("code", code)
+		.select()
+		.single();
+
+	if (error) throw error;
+	return rowToLobby(updated as lobbyRowProps);
 }
