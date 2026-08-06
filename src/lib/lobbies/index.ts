@@ -11,4 +11,8 @@ export {
 	removeMusicFromQueue,
 	setCurrentTrackIndex,
 } from "./musicQueueMutations";
-export { subscribeToPublicLobbies, subscribeToLobbyByCode } from "./realtime";
+export {
+	subscribeToPublicLobbies,
+	subscribeToLobbyByCode,
+	subscribeToLobbyPresence,
+} from "./realtime";

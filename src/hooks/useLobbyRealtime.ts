@@ -18,12 +18,28 @@ export function useLobbyRealtime(
 		if (!code) return;
 
 		let cancelled = false;
+		let removalHandled = false;
+
+		// Not a diff: this checks membership in the snapshot as-is, so it
+		// catches both a live kick (was in the list, got removed) and a
+		// reload with a stale/foreign player id (never in the list to begin
+		// with) through the same path.
+		function checkStillMember(players: playerProps[]) {
+			if (removalHandled) return;
+			if (currentPlayerId == null) return;
+			if (players.some((player) => player.id === currentPlayerId)) return;
+
+			removalHandled = true;
+			showToast("Vous ne faites plus partie de ce lobby.", "closed");
+			setKicked(true);
+		}
 
 		getLobbyByCode(code).then((found) => {
 			if (cancelled) return;
 			if (found) {
 				previousPlayersRef.current = found.player;
 				setLobby(found);
+				checkStillMember(found.player);
 			} else if (!hadInitialLobbyRef.current) {
 				setNotFound(true);
 			}
@@ -39,16 +55,7 @@ export function useLobbyRealtime(
 				);
 				const nextIds = new Set(updated.player.map((player) => player.id));
 
-				// handle kicked player
-				const wasKicked =
-					currentPlayerId != null &&
-					previousIds.has(currentPlayerId) &&
-					!nextIds.has(currentPlayerId);
-
-				if (wasKicked) {
-					showToast("Vous avez été exclu du lobby.", "closed");
-					setKicked(true);
-				}
+				checkStillMember(updated.player);
 
 				// handle player promotion
 				const previousHost = previousPlayersRef.current.find((p) => p.host);

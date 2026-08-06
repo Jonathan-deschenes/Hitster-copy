@@ -3,7 +3,7 @@
 ## Donnée du lobby
 
 [X] Promotion de l'hote au choix ou a la deconnexion  
-[ ] Suppression lobby vide  
+[X] Suppression lobby vide  
 [X] Possibilité exlusion d'un joueur
 
 ## Option de la partie

@@ -1,20 +1,36 @@
+import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { GameStatus } from "../types";
-import type { GameStateEnum, lobbyProps } from "../types";
+import type { GameStateEnum, lobbyProps, playerProps } from "../types";
 import {
 	deleteLobby,
 	leaveLobby,
+	subscribeToLobbyPresence,
 	updateGameStatus,
 	updateRound,
 } from "../lib/lobbies";
 import { promotePlayer } from "../lib/lobbies/lobbyMutations";
-import { pickRandomOtherPlayer } from "../util";
+import { pickRandomOtherPlayer, pickSuccessorPlayer } from "../util";
 import { useSpotifyPlayer } from "./useSpotifyPlayer";
 
 interface UseGameActionsParams {
 	code?: string;
 	lobby: lobbyProps | null;
 	currentPlayerId?: string | null;
+}
+
+/** Promotes `successor` and removes the departing player, or deletes the lobby if no one is left to hand it to. */
+async function resolveHostDeparture(
+	code: string,
+	departingPlayerId: string,
+	successor: playerProps | null,
+) {
+	if (successor) {
+		await promotePlayer(code, successor.id);
+		await leaveLobby(code, departingPlayerId);
+	} else {
+		await deleteLobby(code);
+	}
 }
 
 export function useGameActions({
@@ -30,21 +46,58 @@ export function useGameActions({
 
 	const spotifyPlayer = useSpotifyPlayer({ enabled: true });
 
+	// Kept fresh without re-subscribing the presence channel on every lobby update.
+	const playersRef = useRef(players);
+	useEffect(() => {
+		playersRef.current = players;
+	}, [players]);
+
+	// Detects players (including the host) whose connection drops without
+	// going through handleLeaving/handlePlayerKick (closed tab, crash, lost
+	// network, ...). Each connected client runs this same logic and, thanks
+	// to the deterministic successor pick, only one of them actually acts.
+	useEffect(() => {
+		if (!code || !currentPlayerId) return;
+
+		const unsubscribe = subscribeToLobbyPresence(
+			code,
+			currentPlayerId,
+			(leftPlayerId) => {
+				const currentPlayers = playersRef.current;
+				if (!currentPlayers) return;
+
+				const leftPlayer = currentPlayers.find((p) => p.id === leftPlayerId);
+				// Already handled through a normal leave/kick, or unknown player.
+				if (!leftPlayer) return;
+
+				if (leftPlayer.host) {
+					const successor = pickSuccessorPlayer(currentPlayers, leftPlayerId);
+					// Nobody else in the lobby to detect this at all, or it's not my turn to act.
+					if (!successor || successor.id !== currentPlayerId) return;
+
+					resolveHostDeparture(code, leftPlayerId, successor);
+				} else {
+					// Only the host is allowed to remove a player.
+					const iAmHost = currentPlayers.find(
+						(p) => p.id === currentPlayerId,
+					)?.host;
+					if (!iAmHost) return;
+
+					leaveLobby(code, leftPlayerId);
+				}
+			},
+		);
+
+		return unsubscribe;
+	}, [code, currentPlayerId]);
+
 	async function handleLeaving() {
 		if (!code || !lobby || !currentPlayerId || !players) return;
 
 		if (currentPlayer?.host) {
-			const newHost = players
-				? pickRandomOtherPlayer(players, currentPlayerId)
-				: null;
-
-			if (newHost && players?.length >= 2) {
-				await promotePlayer(code, newHost.id);
-				await leaveLobby(code, currentPlayerId);
-			} else {
-				spotifyPlayer.pause;
-				await deleteLobby(code);
-			}
+			const successor = pickRandomOtherPlayer(players, currentPlayerId);
+			if (!successor) spotifyPlayer.pause();
+			await resolveHostDeparture(code, currentPlayerId, successor);
 		} else {
 			await leaveLobby(code, currentPlayerId);
 		}
