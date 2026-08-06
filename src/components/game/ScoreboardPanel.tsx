@@ -1,6 +1,6 @@
 import type { playerProps } from "../../types";
 import { IconTrophy } from "../icons/GameIcons";
-import Scoreboard from "../Scoreboard";
+import Scoreboard from "./Scoreboard";
 
 interface ScoreboardPanelProps {
 	players: playerProps[];

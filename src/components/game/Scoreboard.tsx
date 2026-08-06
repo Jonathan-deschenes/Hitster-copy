@@ -1,6 +1,6 @@
-import { useState } from "react";
-import type { playerProps } from "../types";
-import { IconCrown, IconKick, IconMore } from "./icons/PlayerIcons";
+import { useEffect, useRef, useState } from "react";
+import type { playerProps } from "../../types";
+import { IconCrown, IconKick, IconMore } from "../icons/PlayerIcons";
 
 const RANK_STYLES: Record<number, string> = {
 	1: "bg-linear-to-br from-[#ffd76a] to-[#ff9f1c] text-bg-deep",
@@ -24,6 +24,23 @@ export default function Scoreboard({
 	promotionAction,
 }: ScoreboardProps) {
 	const [menuPlayerId, setMenuPlayerId] = useState<string | null>(null);
+	const openMenuRef = useRef<HTMLLIElement | null>(null);
+
+	useEffect(() => {
+		if (!menuPlayerId) return;
+
+		function handleClickOutside(e: MouseEvent) {
+			if (
+				openMenuRef.current &&
+				!openMenuRef.current.contains(e.target as Node)
+			) {
+				setMenuPlayerId(null);
+			}
+		}
+
+		document.addEventListener("mousedown", handleClickOutside);
+		return () => document.removeEventListener("mousedown", handleClickOutside);
+	}, [menuPlayerId]);
 
 	const ranked = [...players].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
@@ -38,6 +55,7 @@ export default function Scoreboard({
 				return (
 					<li
 						key={player.id}
+						ref={isMenuOpen ? openMenuRef : undefined}
 						className={`relative flex items-center gap-4 rounded-2xl border px-4 py-3 ${
 							isYou
 								? "border-accent-blue bg-purple/12"
@@ -84,32 +102,24 @@ export default function Scoreboard({
 						)}
 
 						{isMenuOpen && (
-							<>
+							<div className='absolute top-full right-4 z-40 mt-1 flex w-40 flex-col overflow-hidden rounded-xl border border-lavender/14 bg-bg-deep shadow-lg'>
 								<button
 									type='button'
-									aria-label='Fermer le menu'
-									onClick={() => setMenuPlayerId(null)}
-									className='fixed inset-0 z-30 cursor-default'
-								/>
-								<div className='absolute top-full right-4 z-40 mt-1 flex w-40 flex-col overflow-hidden rounded-xl border border-lavender/14 bg-bg-deep shadow-lg'>
-									<button
-										type='button'
-										onClick={() => promotionAction(player.id)}
-										className='flex items-center gap-2 px-3 py-2.5 text-left text-[0.82rem] text-lavender/85 transition-colors hover:bg-lavender/10'
-									>
-										<IconCrown />
-										Promouvoir hôte
-									</button>
-									<button
-										type='button'
-										onClick={() => kickAction(player.id)}
-										className='flex items-center gap-2 px-3 py-2.5 text-left text-[0.82rem] text-red-400 transition-colors hover:bg-red-500/10'
-									>
-										<IconKick />
-										Exclure
-									</button>
-								</div>
-							</>
+									onClick={() => promotionAction(player.id)}
+									className='flex items-center gap-2 px-3 py-2.5 text-left text-[0.82rem] text-lavender/85 transition-colors hover:bg-lavender/10'
+								>
+									<IconCrown />
+									Promouvoir hôte
+								</button>
+								<button
+									type='button'
+									onClick={() => kickAction(player.id)}
+									className='flex items-center gap-2 px-3 py-2.5 text-left text-[0.82rem] text-red-400 transition-colors hover:bg-red-500/10'
+								>
+									<IconKick />
+									Exclure
+								</button>
+							</div>
 						)}
 					</li>
 				);

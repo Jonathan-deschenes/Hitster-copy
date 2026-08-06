@@ -54,13 +54,6 @@ export function useLobbyRealtime(
 				const previousHost = previousPlayersRef.current.find((p) => p.host);
 				const newHost = updated.player.find((p) => p.host);
 
-				console.log("[promotion debug]", {
-					previousHostId: previousHost?.id,
-					newHostId: newHost?.id,
-					previousPlayers: previousPlayersRef.current,
-					updatedPlayers: updated.player,
-				});
-
 				if (previousHost?.id !== newHost?.id) {
 					showToast(
 						`${newHost?.pseudo || "Un joueur"} a été promu hôte de la partie.`,

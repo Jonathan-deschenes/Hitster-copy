@@ -8,6 +8,8 @@ import {
 	updateRound,
 } from "../lib/lobbies";
 import { promotePlayer } from "../lib/lobbies/lobbyMutations";
+import { pickRandomOtherPlayer } from "../util";
+import { useSpotifyPlayer } from "./useSpotifyPlayer";
 
 interface UseGameActionsParams {
 	code?: string;
@@ -23,13 +25,26 @@ export function useGameActions({
 	const navigate = useNavigate();
 
 	const currentPlayer = lobby?.player.find((p) => p.id === currentPlayerId);
+	const players = lobby?.player;
 	const gameState = lobby?.game_state;
 
+	const spotifyPlayer = useSpotifyPlayer({ enabled: true });
+
 	async function handleLeaving() {
-		if (!code || !lobby || !currentPlayerId) return;
+		if (!code || !lobby || !currentPlayerId || !players) return;
 
 		if (currentPlayer?.host) {
-			await deleteLobby(code);
+			const newHost = players
+				? pickRandomOtherPlayer(players, currentPlayerId)
+				: null;
+
+			if (newHost && players?.length >= 2) {
+				await promotePlayer(code, newHost.id);
+				await leaveLobby(code, currentPlayerId);
+			} else {
+				spotifyPlayer.pause;
+				await deleteLobby(code);
+			}
 		} else {
 			await leaveLobby(code, currentPlayerId);
 		}
