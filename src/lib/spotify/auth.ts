@@ -1,4 +1,5 @@
 import { generateCodeChallenge, generateRandomString } from "./pkce";
+import { StorageKeys, StorageUtility } from "../../hooks/useStorage";
 
 const AUTHORIZE_ENDPOINT = "https://accounts.spotify.com/authorize";
 const TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token";
@@ -16,7 +17,6 @@ const SCOPES = [
 const VERIFIER_STORAGE_KEY = "spotify_pkce_verifier";
 const STATE_STORAGE_KEY = "spotify_pkce_state";
 const RETURN_TO_STORAGE_KEY = "spotify_return_to";
-const AUTH_STORAGE_KEY = "spotify_host_auth";
 
 type StoredAuth = {
 	accessToken: string;
@@ -48,21 +48,15 @@ function getRedirectUri(): string {
 }
 
 function readStoredAuth(): StoredAuth | null {
-	const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-	if (!raw) return null;
-	try {
-		return JSON.parse(raw) as StoredAuth;
-	} catch {
-		return null;
-	}
+	return StorageUtility.getItem<StoredAuth>(StorageKeys.SPOTIFY_HOST_AUTH);
 }
 
 function writeStoredAuth(auth: StoredAuth) {
-	localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
+	StorageUtility.setItem(StorageKeys.SPOTIFY_HOST_AUTH, auth);
 }
 
 export function clearSpotifyAuth() {
-	localStorage.removeItem(AUTH_STORAGE_KEY);
+	StorageUtility.removeItem(StorageKeys.SPOTIFY_HOST_AUTH);
 }
 
 export function isSpotifyConnected(): boolean {

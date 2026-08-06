@@ -18,6 +18,7 @@ import GameStatusBadge from "../components/game/GameStatusBadge";
 import HostActionButton from "../components/game/HostActionButton";
 import PlayerAvatarList from "../components/game/PlayerAvatarList";
 import ConnectSpotifyButton from "../components/game/ConnectSpotifyButton";
+import SpotifyVolumeControl from "../components/game/SpotifyVolumeControl";
 import { useMusicQueue } from "../hooks/useMusicQueue";
 import { useSpotifyPlayer } from "../hooks/useSpotifyPlayer";
 import { isSpotifyConnected } from "../lib/spotify/auth";
@@ -52,8 +53,6 @@ export default function Game() {
 
 	const prevStatus = useRef<GameStateEnum | undefined>(undefined);
 
-	// Only the host plays audio — their browser is the Spotify Connect
-	// device, acting as the speaker for everyone in the room.
 	const isHost = !!currentPlayer?.host && isSpotifyConnected();
 	const spotifyPlayer = useSpotifyPlayer({ enabled: isHost });
 
@@ -61,11 +60,6 @@ export default function Game() {
 		if (spotifyPlayer.error) showToast(spotifyPlayer.error, "error");
 	}, [spotifyPlayer.error]);
 
-	// Drives host-side playback from the synced game state: start a new
-	// track when the queue advances, resume in place after a pause, and
-	// pause on demand. `music_queue.current` updates over a separate
-	// realtime round-trip from `game_state.status`, so this only reacts to
-	// the track actually changing rather than the status transition alone.
 	const currentTrackId = musicQueue[currentTrackIndex]?.id;
 	const playbackRef = useRef<{
 		prevStatus?: GameStateEnum;
@@ -202,6 +196,13 @@ export default function Game() {
 						<HostActionButton
 							status={gameState.status}
 							onClick={hostActionByStatus[gameState.status]}
+						/>
+					)}
+
+					{isHost && (
+						<SpotifyVolumeControl
+							volume={spotifyPlayer.volume}
+							onChange={spotifyPlayer.setVolume}
 						/>
 					)}
 

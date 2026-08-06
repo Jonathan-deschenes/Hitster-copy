@@ -67,6 +67,24 @@ export function IconPause() {
 	);
 }
 
+export function IconVolume() {
+	return (
+		<svg width='16' height='16' viewBox='0 0 18 18' fill='none'>
+			<path
+				d='M2 6.8v4.4h3.2L9.5 15V3l-4.3 3.8H2Z'
+				fill='currentColor'
+				strokeLinejoin='round'
+			/>
+			<path
+				d='M12.4 6.3a4 4 0 0 1 0 5.4M14.5 4a7 7 0 0 1 0 10'
+				stroke='currentColor'
+				strokeWidth='1.4'
+				strokeLinecap='round'
+			/>
+		</svg>
+	);
+}
+
 export function IconNextRound() {
 	return (
 		<svg width='16' height='16' viewBox='0 0 18 18' fill='none'>

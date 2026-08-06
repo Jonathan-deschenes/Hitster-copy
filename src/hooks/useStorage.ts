@@ -1,5 +1,7 @@
 const StorageKeys = {
 	USER_NAME: "USER_NAME",
+	SPOTIFY_HOST_AUTH: "SPOTIFY_HOST_AUTH",
+	SPOTIFY_HOST_VOLUME: "SPOTIFY_HOST_VOLUME",
 } as const;
 
 export type StorageKeysType = (typeof StorageKeys)[keyof typeof StorageKeys];
