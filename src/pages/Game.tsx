@@ -73,7 +73,7 @@ export default function Game() {
 	// current game state
 	const gameState = lobby?.game_state;
 	// current round timer
-	const [counter, setCounter] = useState<number>(30);
+	const [counter, setCounter] = useState<number>(gameState?.duration ?? 30);
 	// host-only, mobile-only player management modal (kick/promote)
 	const [manageOpen, setManageOpen] = useState(false);
 	// host-only, mobile-only lobby settings modal
@@ -133,7 +133,7 @@ export default function Game() {
 		if (gameState?.status !== GameStatus.Playing || !code) return;
 
 		if (!cameFromPause) {
-			setCounter(30);
+			setCounter(gameState.duration);
 		}
 
 		if (cameFromFinished) incrementCurrentTrackIndex();

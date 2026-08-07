@@ -22,6 +22,7 @@ export function useCreateGameForm() {
 			mode: gameModeOptions[0],
 			public: true,
 			rounds: 10,
+			duration: 30,
 		});
 	const [player, setPlayer] = useState<playerProps>({
 		id: generateUniqueId(),
@@ -55,6 +56,7 @@ export function useCreateGameForm() {
 					mode: gameFormSettings.mode.value,
 					public: gameFormSettings.public,
 					rounds: gameFormSettings.rounds,
+					duration: gameFormSettings.duration,
 				},
 				player,
 			);

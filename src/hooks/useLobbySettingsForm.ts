@@ -1,9 +1,6 @@
 import { useState, type FormEvent } from "react";
 import type { lobbyProps, lobbySettingsFormProps } from "../types";
-import {
-	gameModeOptions,
-	DURATION_DEFAULT,
-} from "../constants/createGameOptions";
+import { gameModeOptions } from "../constants/createGameOptions";
 
 export function useLobbySettingsForm(
 	lobby: lobbyProps,
@@ -14,7 +11,7 @@ export function useLobbySettingsForm(
 		rounds: lobby.game_state?.totalRounds ?? 10,
 		category: lobby.category,
 		public: lobby.public,
-		duration: DURATION_DEFAULT,
+		duration: lobby.game_state?.duration,
 	});
 
 	function handleSubmit(event: FormEvent<HTMLFormElement>) {

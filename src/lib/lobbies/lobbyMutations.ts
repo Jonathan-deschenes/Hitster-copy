@@ -20,6 +20,7 @@ type CreateLobbyInput = {
 	mode: string;
 	public: boolean;
 	rounds: number;
+	duration: number;
 };
 
 export async function createLobby(
@@ -44,6 +45,7 @@ export async function createLobby(
 					turn: 0,
 					round: 0,
 					totalRounds: settings.rounds,
+					duration: settings.duration,
 				},
 				players: [host],
 			})

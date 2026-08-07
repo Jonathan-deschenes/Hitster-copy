@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { IconMusic } from "../icons/GameIcons";
-import { GameStatus } from "../../types";
+import { GameMode, GameStatus } from "../../types";
 import type { gameStateProps, musicItemsProps } from "../../types";
 
 interface AlbumArtPanelProps {
@@ -68,11 +68,13 @@ export default function AlbumArtPanel({
 					)}
 					<h2 className='truncate font-display text-xl font-semibold text-white'>
 						{revealed
-							? (currentTrack?.name ?? "Titre indisponible")
+							? gameState?.mode === GameMode.Titre
+								? (currentTrack?.album ?? "Album indisponible")
+								: (currentTrack?.name ?? "Titre indisponible")
 							: "Titre caché"}
 					</h2>
 					<p className='truncate text-sm text-lavender/68'>
-						{revealed
+						{revealed || gameState?.mode !== GameMode.Titre
 							? (currentTrack?.artist.join(", ") ?? "")
 							: "Devine avant de révéler !"}
 					</p>

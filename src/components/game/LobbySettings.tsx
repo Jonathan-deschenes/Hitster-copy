@@ -36,7 +36,7 @@ export default function LobbySettings({
 	const gameMode: gameCategoryProps[] = gameModeOptions;
 
 	const filteredGameMode =
-		gameCategory === "Jeux vidéo" || gameCategory === "Films et émission"
+		gameCategory === musicStyle[3].label || gameCategory === musicStyle[4].label
 			? gameMode.filter((g) => g.label === "Titre")
 			: gameMode.slice(0, -1);
 

@@ -7,7 +7,7 @@ const corsHeaders = {
 
 const TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token";
 const FIELDS =
-	"items(item(id,name,duration_ms,artists(name),album(release_date,images))),total,limit,offset";
+	"items(item(id,name,duration_ms,artists(name),album(name,release_date,images))),total,limit,offset";
 const PAGE_LIMIT = 50;
 
 const supabaseAdmin = createClient(
@@ -69,6 +69,7 @@ type SpotifyPlaylistItem = {
 		duration_ms: number;
 		artists?: { name: string }[];
 		album?: {
+			name?: string;
 			release_date?: string;
 			images?: { url: string; width?: number; height?: number }[];
 		};
@@ -86,6 +87,7 @@ function toMusicItem(playlistItem: SpotifyPlaylistItem) {
 		id: track.id,
 		name: track.name,
 		artist: (track.artists ?? []).map((artist: { name: string }) => artist.name),
+		album: track.album.name ?? "",
 		duration: track.duration_ms,
 		cover: track.album.images?.[0] ?? track.album.images?.at(-1) ?? null,
 		releaseDate: track.album.release_date ?? "",

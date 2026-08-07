@@ -10,6 +10,7 @@ export type createGameFormSettingsProps = {
 	mode: gameCategoryProps;
 	public: boolean;
 	rounds: number;
+	duration: number;
 };
 
 export type joinGameFormSettingsProps = {
@@ -50,6 +51,7 @@ export const GameMode = {
 	Annee: "annee",
 	Decennie: "decennie",
 	Album: "album",
+	Titre: "titre",
 };
 
 export type GameStateEnum = (typeof GameStatus)[keyof typeof GameStatus];
@@ -62,6 +64,7 @@ export type gameStateProps = {
 	turn: number;
 	round: number;
 	totalRounds: number;
+	duration: number;
 };
 
 export type playerProps = {
@@ -130,6 +133,7 @@ export type musicItemsProps = {
 	id: string;
 	name: string;
 	artist: string[];
+	album: string;
 	duration: number;
 	cover: spotifyImageProps;
 	releaseDate: string;

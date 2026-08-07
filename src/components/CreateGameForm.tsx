@@ -5,6 +5,9 @@ import ToggleField from "./ToggleField";
 import { PrimaryButton } from "./Button";
 import { IconPlus } from "./icons/FormIcons";
 import {
+	DURATION_MAX,
+	DURATION_MIN,
+	DURATION_STEP,
 	gameModeOptions,
 	musicStyle,
 	roundsOptions,
@@ -30,7 +33,7 @@ export default function CreateGameForm() {
 	const gameMode: gameCategoryProps[] = gameModeOptions;
 
 	const filteredGameMode =
-		gameCategory === "Jeux vidéo" || gameCategory === "Films et émission"
+		gameCategory === musicStyle[3].label || gameCategory === musicStyle[4].label
 			? gameMode.filter((g) => g.label === "Titre")
 			: gameMode.slice(0, -1);
 
@@ -134,6 +137,35 @@ export default function CreateGameForm() {
 				hint='Nombre de morceaux à deviner avant la fin de la partie.'
 				options={roundsOptions}
 			/>
+
+			<div className='flex flex-col gap-2'>
+				<label
+					htmlFor='lobby-settings-duration'
+					className='text-[0.9rem] font-semibold'
+				>
+					Durée des extraits
+				</label>
+				<div className='flex items-center gap-3 rounded-2xl border border-lavender/14 bg-bg-deep/35 px-4 py-3.5'>
+					<input
+						id='lobby-settings-duration'
+						type='range'
+						min={DURATION_MIN}
+						max={DURATION_MAX}
+						step={DURATION_STEP}
+						value={gameFormSettings.duration}
+						onChange={(e) =>
+							setGameFormSettings((prev) => ({
+								...prev,
+								duration: Number(e.target.value),
+							}))
+						}
+						className='w-full accent-accent-blue'
+					/>
+					<span className='w-10 shrink-0 text-right text-[0.9rem] text-lavender/68'>
+						{gameFormSettings.duration}s
+					</span>
+				</div>
+			</div>
 
 			<ToggleField
 				id='lobby-public'
