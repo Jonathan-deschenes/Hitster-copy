@@ -126,6 +126,27 @@ export function IconSettings() {
 	);
 }
 
+export function IconUsers() {
+	return (
+		<svg width='18' height='18' viewBox='0 0 24 24' fill='none'>
+			<circle cx='9' cy='8' r='3' stroke='currentColor' strokeWidth='1.6' />
+			<path
+				d='M3.5 19.5a5.5 5.5 0 0 1 11 0'
+				stroke='currentColor'
+				strokeWidth='1.6'
+				strokeLinecap='round'
+			/>
+			<path
+				d='M16 8.5a2.75 2.75 0 1 1 0 5.4M18.75 19.5a5 5 0 0 0-4.2-4.94'
+				stroke='currentColor'
+				strokeWidth='1.6'
+				strokeLinecap='round'
+				strokeLinejoin='round'
+			/>
+		</svg>
+	);
+}
+
 export function IconNextRound() {
 	return (
 		<svg width='16' height='16' viewBox='0 0 18 18' fill='none'>

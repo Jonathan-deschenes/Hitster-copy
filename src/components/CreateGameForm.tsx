@@ -12,6 +12,7 @@ import {
 import { useCreateGameForm } from "../hooks/useCreateGameForm";
 import { StorageKeys, StorageUtility } from "../hooks/useStorage";
 import type { gameCategoryProps, GameModeEnum } from "../types";
+import { useEffect } from "react";
 
 export default function CreateGameForm() {
 	const {
@@ -32,6 +33,15 @@ export default function CreateGameForm() {
 		gameCategory === "Jeux vidéo" || gameCategory === "Films et émission"
 			? gameMode.filter((g) => g.label === "Titre")
 			: gameMode.slice(0, -1);
+
+	useEffect(() => {
+		const stillValid = filteredGameMode.some(
+			(option) => option.value === gameFormSettings.mode.value,
+		);
+		if (!stillValid) {
+			setGameFormSettings((prev) => ({ ...prev, mode: filteredGameMode[0] }));
+		}
+	}, [filteredGameMode]);
 
 	// function to handle the pseudo storage saving
 	const handlePseudoName = (

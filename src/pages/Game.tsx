@@ -28,7 +28,11 @@ import PlayerAvatarList from "../components/game/PlayerAvatarList";
 import ConnectSpotifyButton from "../components/game/ConnectSpotifyButton";
 import SpotifyVolumeControl from "../components/game/SpotifyVolumeControl";
 import Modal from "../components/Modal";
-import { IconClose } from "../components/icons/GameIcons";
+import {
+	IconClose,
+	IconSettings,
+	IconUsers,
+} from "../components/icons/GameIcons";
 import { useMusicQueue } from "../hooks/useMusicQueue";
 import { useSpotifyPlayer } from "../hooks/useSpotifyPlayer";
 import { isSpotifyConnected } from "../lib/spotify/auth";
@@ -185,16 +189,9 @@ export default function Game() {
 	return (
 		<PageBackground>
 			<TopBar />
-
-			<LobbyHeaderBadges
-				name={lobby.name}
-				code={lobby.generatedCode}
-				isPublic={lobby.public}
-			/>
-
 			<main className='relative z-10 flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-4 px-4 py-2 sm:px-8 lg:px-12'>
-				<div className='flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-6 md:grid md:grid-cols-[1fr_auto_1fr]'>
-					<div className='hidden md:block'>
+				<div className='flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-6 lg:grid lg:grid-cols-[1fr_auto_1fr] lg:items-stretch lg:content-stretch'>
+					<div className='hidden min-h-0 lg:block'>
 						{currentPlayer?.host && (
 							<LobbySettingsPanel
 								lobby={lobby}
@@ -203,18 +200,32 @@ export default function Game() {
 							/>
 						)}
 					</div>
-					<div className='relative flex shrink-0 items-center justify-center'>
-						{(gameState?.status === GameStatus.Playing ||
-							gameState?.status === GameStatus.Paused) && (
-							<h2 className='pointer-events-none z-20 absolute inset-0 flex items-center justify-center text-2xl text-lavender/85'>
-								{counter}
-							</h2>
-						)}
-						<AlbumArtPanel
-							key={currentTrackId}
-							currentTrack={musicQueue[currentTrackIndex]}
-							gameState={gameState}
+					<div className='relative flex flex-col shrink-0 gap-y-4 items-center justify-center'>
+						<LobbyHeaderBadges
+							name={lobby.name}
+							code={lobby.generatedCode}
+							isPublic={lobby.public}
 						/>
+						<div className='relative w-full h-fit'>
+							<AlbumArtPanel
+								key={currentTrackId}
+								currentTrack={musicQueue[currentTrackIndex]}
+								gameState={gameState}
+							/>
+							{(gameState?.status === GameStatus.Playing ||
+								gameState?.status === GameStatus.Paused) && (
+								<h2 className='h-full pointer-events-none z-20 absolute inset-0 flex items-center justify-center text-2xl text-lavender/85'>
+									{counter}
+								</h2>
+							)}
+						</div>
+						<div className='flex flex-col items-center justify-items-center gap-3'>
+							{gameState && <GameStatusBadge gameState={gameState} />}
+							<PlayerAvatarList
+								players={scoredPlayers}
+								currentPlayerId={current}
+							/>
+						</div>
 					</div>
 					<ScoreboardPanel
 						players={scoredPlayers}
@@ -222,23 +233,21 @@ export default function Game() {
 						canManagePlayers={!!currentPlayer?.host}
 						kickAction={handlePlayerKick}
 						promotionAction={handlePlayerPromotion}
-						className='hidden md:flex md:justify-self-end'
+						className='hidden min-h-0 lg:flex lg:justify-self-end'
 					/>
 				</div>
 			</main>
 
-			<footer className='relative z-10 flex shrink-0 flex-col items-center gap-3 px-4 pt-2 pb-4 sm:px-12'>
+			<footer className='relative z-10 flex flex-col items-end gap-3 px-4 pt-2 pb-4 sm:px-12 lg:grid lg:grid-cols-[1fr_auto_1fr] lg:gap-4'>
 				<PrimaryButton
 					type='button'
-					className='order-last w-full sm:w-auto md:absolute md:bottom-4 md:left-4 md:order-none md:w-fit'
+					className='order-last w-full lg:w-auto lg:order-none lg:w-fit lg:justify-self-start'
 					onClick={handleLeaving}
 				>
 					Quitter la partie
 				</PrimaryButton>
-
-				<div className='flex flex-wrap items-center justify-center gap-3'>
-					{gameState && <GameStatusBadge gameState={gameState} />}
-
+				<div></div>
+				<div className='w-full lg:w-fit flex flex-wrap items-center justify-center gap-3 lg:justify-self-end'>
 					{currentPlayer?.host && !isSpotifyConnected() && (
 						<ConnectSpotifyButton />
 					)}
@@ -250,35 +259,38 @@ export default function Game() {
 						/>
 					)}
 
-					{isHost && (
-						<SpotifyVolumeControl
-							volume={spotifyPlayer.volume}
-							onChange={spotifyPlayer.setVolume}
-						/>
-					)}
+					<div className='flex gap-4'>
+						{isHost && (
+							<SpotifyVolumeControl
+								volume={spotifyPlayer.volume}
+								onChange={spotifyPlayer.setVolume}
+							/>
+						)}
+						{currentPlayer?.host && (
+							<SecondaryButton
+								type='button'
+								className='lg:hidden p-2!'
+								aria-label='Gérer les joueurs'
+								title='Gérer les joueurs'
+								onClick={() => setManageOpen(true)}
+							>
+								<IconUsers />
+							</SecondaryButton>
+						)}
 
-					{currentPlayer?.host && (
-						<SecondaryButton
-							type='button'
-							className='md:hidden'
-							onClick={() => setManageOpen(true)}
-						>
-							Gérer les joueurs
-						</SecondaryButton>
-					)}
-
-					{currentPlayer?.host && (
-						<SecondaryButton
-							type='button'
-							className='md:hidden'
-							onClick={() => setSettingsOpen(true)}
-						>
-							Paramètres
-						</SecondaryButton>
-					)}
+						{currentPlayer?.host && (
+							<SecondaryButton
+								type='button'
+								className='lg:hidden !p-2'
+								aria-label='Paramètres'
+								title='Paramètres'
+								onClick={() => setSettingsOpen(true)}
+							>
+								<IconSettings />
+							</SecondaryButton>
+						)}
+					</div>
 				</div>
-
-				<PlayerAvatarList players={scoredPlayers} currentPlayerId={current} />
 			</footer>
 
 			<Modal

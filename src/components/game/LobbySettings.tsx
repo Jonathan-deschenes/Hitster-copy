@@ -11,32 +11,46 @@ import {
 	DURATION_STEP,
 } from "../../constants/createGameOptions";
 import { useLobbySettingsForm } from "../../hooks/useLobbySettingsForm";
-import type { lobbyProps, lobbySettingsFormProps } from "../../types";
+import type {
+	gameCategoryProps,
+	lobbyProps,
+	lobbySettingsFormProps,
+} from "../../types";
+import { useEffect } from "react";
 
 interface LobbySettingsProps {
 	lobby: lobbyProps;
 	onRestart: (settings: lobbySettingsFormProps) => void;
 }
 
-export default function LobbySettings({ lobby, onRestart }: LobbySettingsProps) {
+export default function LobbySettings({
+	lobby,
+	onRestart,
+}: LobbySettingsProps) {
 	const { settings, setSettings, handleSubmit } = useLobbySettingsForm(
 		lobby,
 		onRestart,
 	);
 
-	return (
-		<form className='flex flex-col gap-5' onSubmit={handleSubmit}>
-			<SelectField
-				id='lobby-settings-mode'
-				label='Mode de jeu'
-				value={settings.mode}
-				onChange={(e) =>
-					setSettings((prev) => ({ ...prev, mode: e.target.value }))
-				}
-				hint='Détermine ce que les joueurs doivent deviner.'
-				options={gameModeOptions}
-			/>
+	const gameCategory: string = settings.category.label;
+	const gameMode: gameCategoryProps[] = gameModeOptions;
 
+	const filteredGameMode =
+		gameCategory === "Jeux vidéo" || gameCategory === "Films et émission"
+			? gameMode.filter((g) => g.label === "Titre")
+			: gameMode.slice(0, -1);
+
+	useEffect(() => {
+		const stillValid = filteredGameMode.some(
+			(option) => option.value === settings.mode,
+		);
+		if (!stillValid) {
+			setSettings((prev) => ({ ...prev, mode: filteredGameMode[0].value }));
+		}
+	}, [filteredGameMode]);
+
+	return (
+		<form className='flex flex-col gap-5 ' onSubmit={handleSubmit}>
 			<SelectField
 				id='lobby-settings-rounds'
 				label='Nombre de manches'
@@ -65,6 +79,17 @@ export default function LobbySettings({ lobby, onRestart }: LobbySettingsProps) 
 				}}
 				hint='Détermine les morceaux proposés pendant la partie.'
 				options={musicStyle}
+			/>
+
+			<SelectField
+				id='lobby-settings-mode'
+				label='Mode de jeu'
+				value={settings.mode}
+				onChange={(e) =>
+					setSettings((prev) => ({ ...prev, mode: e.target.value }))
+				}
+				hint='Détermine ce que les joueurs doivent deviner.'
+				options={filteredGameMode}
 			/>
 
 			<ToggleField
