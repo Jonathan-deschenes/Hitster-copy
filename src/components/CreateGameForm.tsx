@@ -4,9 +4,14 @@ import SelectField from "./SelectField";
 import ToggleField from "./ToggleField";
 import { PrimaryButton } from "./Button";
 import { IconPlus } from "./icons/FormIcons";
-import { musicStyle, roundsOptions } from "../constants/createGameOptions";
+import {
+	gameModeOptions,
+	musicStyle,
+	roundsOptions,
+} from "../constants/createGameOptions";
 import { useCreateGameForm } from "../hooks/useCreateGameForm";
 import { StorageKeys, StorageUtility } from "../hooks/useStorage";
+import type { gameCategoryProps, GameModeEnum } from "../types";
 
 export default function CreateGameForm() {
 	const {
@@ -19,6 +24,14 @@ export default function CreateGameForm() {
 		buttonDisabled,
 		handleSubmit,
 	} = useCreateGameForm();
+
+	const gameCategory: string = gameFormSettings.category.label;
+	const gameMode: gameCategoryProps[] = gameModeOptions;
+
+	const filteredGameMode =
+		gameCategory === "Jeux vidéo" || gameCategory === "Films et émission"
+			? gameMode.filter((g) => g.label === "Titre")
+			: gameMode.slice(0, -1);
 
 	// function to handle the pseudo storage saving
 	const handlePseudoName = (
@@ -83,6 +96,22 @@ export default function CreateGameForm() {
 			/>
 
 			<SelectField
+				id='lobby-settings-mode'
+				label='Mode de jeu'
+				value={gameFormSettings.mode.value}
+				onChange={(e) => {
+					const mode = gameModeOptions.find(
+						(option) => option.value === e.target.value,
+					);
+					if (mode) {
+						setGameFormSettings((prev) => ({ ...prev, mode }));
+					}
+				}}
+				hint='Détermine ce que les joueurs doivent deviner.'
+				options={filteredGameMode}
+			/>
+
+			<SelectField
 				id='lobby-rounds'
 				label='Nombre de manches'
 				value={String(gameFormSettings.rounds)}
@@ -114,7 +143,11 @@ export default function CreateGameForm() {
 				<p className='text-center text-[0.85rem] text-red-400'>{error}</p>
 			)}
 
-			<PrimaryButton type='submit' disabled={buttonDisabled} className='mt-1 w-full'>
+			<PrimaryButton
+				type='submit'
+				disabled={buttonDisabled}
+				className='mt-1 w-full'
+			>
 				<IconPlus />
 				{isSubmitting ? "Création…" : "Créer la partie"}
 			</PrimaryButton>

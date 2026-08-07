@@ -17,6 +17,7 @@ type CreateLobbyInput = {
 	name: string;
 	passwordHash: string;
 	category: gameCategoryProps;
+	mode: string;
 	public: boolean;
 	rounds: number;
 };
@@ -38,6 +39,7 @@ export async function createLobby(
 				code,
 				category: settings.category,
 				game_state: {
+					mode: settings.mode,
 					status: "waiting",
 					turn: 0,
 					round: 0,

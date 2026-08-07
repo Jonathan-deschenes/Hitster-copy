@@ -7,7 +7,12 @@ import {
 } from "react-router-dom";
 import PageBackground from "../components/PageBackground";
 import TopBar from "../components/TopBar";
-import { GameStatus, type GameStateEnum, type lobbyProps } from "../types";
+import {
+	GameStatus,
+	type GameStateEnum,
+	type lobbyProps,
+	type lobbySettingsFormProps,
+} from "../types";
 import { PrimaryButton, SecondaryButton } from "../components/Button";
 import { useLobbyRealtime } from "../hooks/useLobbyRealtime";
 import { useGameActions } from "../hooks/useGameActions";
@@ -15,6 +20,8 @@ import LobbyHeaderBadges from "../components/game/LobbyHeaderBadges";
 import AlbumArtPanel from "../components/game/AlbumArtPanel";
 import ScoreboardPanel from "../components/game/ScoreboardPanel";
 import Scoreboard from "../components/game/Scoreboard";
+import LobbySettings from "../components/game/LobbySettings";
+import LobbySettingsPanel from "../components/game/LobbySettingsPanel";
 import GameStatusBadge from "../components/game/GameStatusBadge";
 import HostActionButton from "../components/game/HostActionButton";
 import PlayerAvatarList from "../components/game/PlayerAvatarList";
@@ -65,6 +72,8 @@ export default function Game() {
 	const [counter, setCounter] = useState<number>(30);
 	// host-only, mobile-only player management modal (kick/promote)
 	const [manageOpen, setManageOpen] = useState(false);
+	// host-only, mobile-only lobby settings modal
+	const [settingsOpen, setSettingsOpen] = useState(false);
 
 	const prevStatus = useRef<GameStateEnum | undefined>(undefined);
 
@@ -148,6 +157,11 @@ export default function Game() {
 		[lobby?.player],
 	);
 
+	// TODO: persist settings + restart the round via a Supabase mutation
+	function handleRestartGame(settings: lobbySettingsFormProps) {
+		console.log("Restart game with settings", settings);
+	}
+
 	// handle no route
 	if (!code || notFound) {
 		return <Navigate to='/' replace />;
@@ -179,7 +193,16 @@ export default function Game() {
 			/>
 
 			<main className='relative z-10 flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-4 px-4 py-2 sm:px-8 lg:px-12'>
-				<div className='flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-6 md:flex-row md:items-stretch'>
+				<div className='flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-6 md:grid md:grid-cols-[1fr_auto_1fr]'>
+					<div className='hidden md:block'>
+						{currentPlayer?.host && (
+							<LobbySettingsPanel
+								lobby={lobby}
+								onRestart={handleRestartGame}
+								className='hidden md:flex'
+							/>
+						)}
+					</div>
 					<div className='relative flex shrink-0 items-center justify-center'>
 						{(gameState?.status === GameStatus.Playing ||
 							gameState?.status === GameStatus.Paused) && (
@@ -199,7 +222,7 @@ export default function Game() {
 						canManagePlayers={!!currentPlayer?.host}
 						kickAction={handlePlayerKick}
 						promotionAction={handlePlayerPromotion}
-						className='hidden md:flex'
+						className='hidden md:flex md:justify-self-end'
 					/>
 				</div>
 			</main>
@@ -243,6 +266,16 @@ export default function Game() {
 							Gérer les joueurs
 						</SecondaryButton>
 					)}
+
+					{currentPlayer?.host && (
+						<SecondaryButton
+							type='button'
+							className='md:hidden'
+							onClick={() => setSettingsOpen(true)}
+						>
+							Paramètres
+						</SecondaryButton>
+					)}
 				</div>
 
 				<PlayerAvatarList players={scoredPlayers} currentPlayerId={current} />
@@ -277,6 +310,39 @@ export default function Game() {
 						canManagePlayers={!!currentPlayer?.host}
 						kickAction={handlePlayerKick}
 						promotionAction={handlePlayerPromotion}
+					/>
+				</div>
+			</Modal>
+
+			<Modal
+				open={settingsOpen}
+				onClose={() => setSettingsOpen(false)}
+				labelledBy='lobby-settings-title'
+				size='md'
+			>
+				<div className='flex shrink-0 items-center justify-between gap-4 p-6 pb-4'>
+					<h2
+						id='lobby-settings-title'
+						className='font-display text-lg font-bold'
+					>
+						Paramètres de la partie
+					</h2>
+					<button
+						type='button'
+						onClick={() => setSettingsOpen(false)}
+						aria-label='Fermer'
+						className='inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-lavender/14 bg-lavender/[0.04] text-lavender/68 transition-colors hover:border-purple-soft hover:bg-purple/[0.14] hover:text-white'
+					>
+						<IconClose />
+					</button>
+				</div>
+				<div className='min-h-0 flex-1 overflow-y-auto px-6 pb-6'>
+					<LobbySettings
+						lobby={lobby}
+						onRestart={(settings) => {
+							handleRestartGame(settings);
+							setSettingsOpen(false);
+						}}
 					/>
 				</div>
 			</Modal>

@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs-react";
 import generateUniqueId from "generate-unique-id";
 import type { createGameFormSettingsProps, playerProps } from "../types";
 import { createLobby } from "../lib/lobbies";
-import { musicStyle } from "../constants/createGameOptions";
+import { gameModeOptions, musicStyle } from "../constants/createGameOptions";
 import { StorageKeys, StorageUtility } from "./useStorage";
 
 export function useCreateGameForm() {
@@ -18,7 +18,8 @@ export function useCreateGameForm() {
 		useState<createGameFormSettingsProps>({
 			name: "",
 			password: "",
-			category: musicStyle[0],
+			category: musicStyle[3],
+			mode: gameModeOptions[0],
 			public: true,
 			rounds: 10,
 		});
@@ -51,6 +52,7 @@ export function useCreateGameForm() {
 					name: gameFormSettings.name,
 					passwordHash: hashedPassword,
 					category: gameFormSettings.category,
+					mode: gameFormSettings.mode.value,
 					public: gameFormSettings.public,
 					rounds: gameFormSettings.rounds,
 				},
