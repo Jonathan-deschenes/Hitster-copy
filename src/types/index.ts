@@ -70,8 +70,9 @@ export type gameStateProps = {
 export type playerProps = {
 	id: string;
 	pseudo: string;
-	host?: boolean;
-	score?: number;
+	host: boolean;
+	score: number;
+	answer: string;
 };
 
 /** Shape of a row in the Supabase `lobbies` table. */

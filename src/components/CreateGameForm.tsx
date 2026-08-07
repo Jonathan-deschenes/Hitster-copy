@@ -14,7 +14,7 @@ import {
 } from "../constants/createGameOptions";
 import { useCreateGameForm } from "../hooks/useCreateGameForm";
 import { StorageKeys, StorageUtility } from "../hooks/useStorage";
-import type { gameCategoryProps, GameModeEnum } from "../types";
+import type { gameCategoryProps } from "../types";
 import { useEffect } from "react";
 
 export default function CreateGameForm() {
@@ -44,7 +44,7 @@ export default function CreateGameForm() {
 		if (!stillValid) {
 			setGameFormSettings((prev) => ({ ...prev, mode: filteredGameMode[0] }));
 		}
-	}, [filteredGameMode]);
+	}, [filteredGameMode, gameFormSettings.mode.value, setGameFormSettings]);
 
 	// function to handle the pseudo storage saving
 	const handlePseudoName = (

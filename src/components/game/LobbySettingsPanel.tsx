@@ -1,4 +1,4 @@
-import type { lobbyProps, lobbySettingsFormProps } from "../../types";
+import type { lobbyProps } from "../../types";
 import { IconSettings } from "../icons/GameIcons";
 import LobbySettings from "./LobbySettings";
 

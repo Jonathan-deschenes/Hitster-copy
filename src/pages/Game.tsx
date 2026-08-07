@@ -7,12 +7,7 @@ import {
 } from "react-router-dom";
 import PageBackground from "../components/PageBackground";
 import TopBar from "../components/TopBar";
-import {
-	GameStatus,
-	type GameStateEnum,
-	type lobbyProps,
-	type lobbySettingsFormProps,
-} from "../types";
+import { GameStatus, type GameStateEnum, type lobbyProps } from "../types";
 import { PrimaryButton, SecondaryButton } from "../components/Button";
 import { useLobbyRealtime } from "../hooks/useLobbyRealtime";
 import { useGameActions } from "../hooks/useGameActions";
@@ -89,6 +84,18 @@ export default function Game() {
 	useEffect(() => {
 		if (spotifyPlayer.error) showToast(spotifyPlayer.error, "error");
 	}, [spotifyPlayer.error]);
+
+	// Manual promotion leaves the outgoing host on this page (unlike leaving
+	// the lobby, which pauses via handleLeaving before navigating away) — stop
+	// their device the moment they lose the host flag via realtime.
+	const wasHostRef = useRef(false);
+	useEffect(() => {
+		const isHostNow = !!currentPlayer?.host;
+		if (wasHostRef.current && !isHostNow) {
+			spotifyPlayer.pause();
+		}
+		wasHostRef.current = isHostNow;
+	}, [currentPlayer?.host, spotifyPlayer]);
 
 	const currentTrackId = musicQueue[currentTrackIndex]?.id;
 	const playbackRef = useRef<{

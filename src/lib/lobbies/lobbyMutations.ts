@@ -1,4 +1,5 @@
 import { supabase } from "../supabaseClient";
+import { GameStatus } from "../../types";
 import type {
 	gameCategoryProps,
 	lobbyProps,
@@ -156,16 +157,26 @@ export async function promotePlayer(
 	if (fetchError) throw fetchError;
 	if (!data) return null;
 
+	const row = data as lobbyRowProps;
+
 	// update via js the player array
-	const playersFetch: playerProps[] = data.players;
-	const updatedPlayers = playersFetch.map((p) => ({
+	const updatedPlayers = row.players.map((p) => ({
 		...p,
 		host: p.id === playerId,
 	}));
 
+	// Handing off host mid-round would otherwise leave stale audio playing on
+	// the outgoing host's browser while the game keeps ticking with no one
+	// driving playback. Pause so the new host can resume once their own
+	// device is ready.
+	const game_state =
+		row.game_state.status === GameStatus.Playing
+			? { ...row.game_state, status: GameStatus.Paused }
+			: row.game_state;
+
 	const { data: updated, error } = await supabase
 		.from("lobbies")
-		.update({ players: updatedPlayers })
+		.update({ players: updatedPlayers, game_state })
 		.eq("code", code)
 		.select()
 		.single();

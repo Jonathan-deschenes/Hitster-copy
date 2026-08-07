@@ -44,7 +44,7 @@ export function useGameActions({
 	const players = lobby?.player;
 	const gameState = lobby?.game_state;
 
-	const spotifyPlayer = useSpotifyPlayer({ enabled: true });
+	const spotifyPlayer = useSpotifyPlayer({ enabled: !!currentPlayer?.host });
 
 	// Kept fresh without re-subscribing the presence channel on every lobby update.
 	const playersRef = useRef(players);
@@ -96,7 +96,7 @@ export function useGameActions({
 
 		if (currentPlayer?.host) {
 			const successor = pickRandomOtherPlayer(players, currentPlayerId);
-			if (!successor) spotifyPlayer.pause();
+			await spotifyPlayer.pause();
 			await resolveHostDeparture(code, currentPlayerId, successor);
 		} else {
 			await leaveLobby(code, currentPlayerId);

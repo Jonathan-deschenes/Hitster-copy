@@ -43,7 +43,7 @@ export default function LobbySettings({
 		if (!stillValid) {
 			setSettings((prev) => ({ ...prev, mode: filteredGameMode[0].value }));
 		}
-	}, [filteredGameMode]);
+	}, [filteredGameMode, setSettings, settings.mode]);
 
 	return (
 		<form className='flex flex-col gap-5 ' onSubmit={handleSubmit}>
