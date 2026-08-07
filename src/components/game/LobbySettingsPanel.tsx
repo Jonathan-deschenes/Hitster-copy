@@ -4,13 +4,11 @@ import LobbySettings from "./LobbySettings";
 
 interface LobbySettingsPanelProps {
 	lobby: lobbyProps;
-	onRestart: (settings: lobbySettingsFormProps) => void;
 	className?: string;
 }
 
 export default function LobbySettingsPanel({
 	lobby,
-	onRestart,
 	className = "",
 }: LobbySettingsPanelProps) {
 	return (
@@ -22,7 +20,7 @@ export default function LobbySettingsPanel({
 				<h2 className='font-display text-lg font-bold'>Paramètres</h2>
 			</div>
 			<div className='min-h-0 flex-1 overflow-y-auto'>
-				<LobbySettings lobby={lobby} onRestart={onRestart} />
+				<LobbySettings lobby={lobby} />
 			</div>
 		</div>
 	);

@@ -1,10 +1,12 @@
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type SetStateAction } from "react";
 import type { lobbyProps, lobbySettingsFormProps } from "../types";
 import { gameModeOptions } from "../constants/createGameOptions";
+import { updateGameSettings } from "../lib/lobbies/gameStateMutations";
+import { showToast } from "../lib/toast";
 
 export function useLobbySettingsForm(
 	lobby: lobbyProps,
-	onRestart: (settings: lobbySettingsFormProps) => void,
+	setSettingsOpen: React.Dispatch<SetStateAction<boolean>>,
 ) {
 	const [settings, setSettings] = useState<lobbySettingsFormProps>({
 		mode: lobby.game_state?.mode ?? gameModeOptions[0],
@@ -14,9 +16,10 @@ export function useLobbySettingsForm(
 		duration: lobby.game_state?.duration,
 	});
 
-	function handleSubmit(event: FormEvent<HTMLFormElement>) {
+	async function handleSubmit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		onRestart(settings);
+
+		await updateGameSettings(lobby.generatedCode, settings);
 	}
 
 	return { settings, setSettings, handleSubmit };

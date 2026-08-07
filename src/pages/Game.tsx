@@ -30,6 +30,7 @@ import SpotifyVolumeControl from "../components/game/SpotifyVolumeControl";
 import Modal from "../components/Modal";
 import {
 	IconClose,
+	IconRefresh,
 	IconSettings,
 	IconUsers,
 } from "../components/icons/GameIcons";
@@ -37,6 +38,7 @@ import { useMusicQueue } from "../hooks/useMusicQueue";
 import { useSpotifyPlayer } from "../hooks/useSpotifyPlayer";
 import { isSpotifyConnected } from "../lib/spotify/auth";
 import { updateGameStatus } from "../lib/lobbies";
+import { updateGameSettings } from "../lib/lobbies/gameStateMutations";
 import { showToast } from "../lib/toast";
 
 export default function Game() {
@@ -118,6 +120,14 @@ export default function Game() {
 			previousStatus !== GameStatus.Paused
 		) {
 			spotifyPlayer.pause();
+		} else if (
+			status === GameStatus.Waiting &&
+			previousStatus !== GameStatus.Waiting
+		) {
+			// A restart resets game_state.status to "waiting" — stop whatever
+			// was playing instead of leaving the old track running.
+			spotifyPlayer.pause();
+			playbackRef.current.lastPlayedTrackId = undefined;
 		}
 
 		playbackRef.current.prevStatus = status;
@@ -161,11 +171,6 @@ export default function Game() {
 		[lobby?.player],
 	);
 
-	// TODO: persist settings + restart the round via a Supabase mutation
-	function handleRestartGame(settings: lobbySettingsFormProps) {
-		console.log("Restart game with settings", settings);
-	}
-
 	// handle no route
 	if (!code || notFound) {
 		return <Navigate to='/' replace />;
@@ -193,11 +198,7 @@ export default function Game() {
 				<div className='flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-6 lg:grid lg:grid-cols-[1fr_auto_1fr] lg:items-stretch lg:content-stretch'>
 					<div className='hidden min-h-0 lg:block'>
 						{currentPlayer?.host && (
-							<LobbySettingsPanel
-								lobby={lobby}
-								onRestart={handleRestartGame}
-								className='hidden md:flex'
-							/>
+							<LobbySettingsPanel lobby={lobby} className='hidden md:flex' />
 						)}
 					</div>
 					<div className='relative flex flex-col shrink-0 gap-y-4 items-center justify-center'>
@@ -257,6 +258,27 @@ export default function Game() {
 							status={gameState.status}
 							onClick={hostActionByStatus[gameState.status]}
 						/>
+					)}
+
+					{gameState && currentPlayer?.host && (
+						<SecondaryButton
+							type='button'
+							className='p-2!'
+							aria-label='Relancer la partie'
+							title='Relancer la partie'
+							onClick={() =>
+								code &&
+								updateGameSettings(code, {
+									mode: gameState.mode,
+									rounds: gameState.totalRounds,
+									category: lobby.category,
+									public: lobby.public,
+									duration: gameState.duration,
+								})
+							}
+						>
+							<IconRefresh />
+						</SecondaryButton>
 					)}
 
 					<div className='flex gap-4'>
@@ -349,13 +371,7 @@ export default function Game() {
 					</button>
 				</div>
 				<div className='min-h-0 flex-1 overflow-y-auto px-6 pb-6'>
-					<LobbySettings
-						lobby={lobby}
-						onRestart={(settings) => {
-							handleRestartGame(settings);
-							setSettingsOpen(false);
-						}}
-					/>
+					<LobbySettings lobby={lobby} onRestart={setSettingsOpen} />
 				</div>
 			</Modal>
 		</PageBackground>

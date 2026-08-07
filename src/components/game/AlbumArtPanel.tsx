@@ -74,7 +74,7 @@ export default function AlbumArtPanel({
 							: "Titre caché"}
 					</h2>
 					<p className='truncate text-sm text-lavender/68'>
-						{revealed || gameState?.mode !== GameMode.Titre
+						{revealed && gameState?.mode !== GameMode.Titre
 							? (currentTrack?.artist.join(", ") ?? "")
 							: "Devine avant de révéler !"}
 					</p>

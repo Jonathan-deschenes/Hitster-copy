@@ -11,16 +11,12 @@ import {
 	DURATION_STEP,
 } from "../../constants/createGameOptions";
 import { useLobbySettingsForm } from "../../hooks/useLobbySettingsForm";
-import type {
-	gameCategoryProps,
-	lobbyProps,
-	lobbySettingsFormProps,
-} from "../../types";
-import { useEffect } from "react";
+import type { gameCategoryProps, lobbyProps } from "../../types";
+import { useEffect, type SetStateAction } from "react";
 
 interface LobbySettingsProps {
 	lobby: lobbyProps;
-	onRestart: (settings: lobbySettingsFormProps) => void;
+	onRestart: React.Dispatch<SetStateAction<boolean>>;
 }
 
 export default function LobbySettings({

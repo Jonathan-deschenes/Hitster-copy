@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { GameStatus } from "../types";
 import type { lobbyProps, playerProps } from "../types";
 import { getLobbyByCode, subscribeToLobbyByCode } from "../lib/lobbies";
 import { showToast } from "../lib/toast";
@@ -11,6 +12,9 @@ export function useLobbyRealtime(
 	const hadInitialLobbyRef = useRef(initialLobby != null);
 	const [lobby, setLobby] = useState<lobbyProps | null>(() => initialLobby);
 	const previousPlayersRef = useRef<playerProps[]>(initialLobby?.player ?? []);
+	const previousGameStatusRef = useRef<string | undefined>(
+		initialLobby?.game_state?.status,
+	);
 	const [kicked, setKicked] = useState<boolean>(false);
 	const [notFound, setNotFound] = useState(false);
 
@@ -38,6 +42,7 @@ export function useLobbyRealtime(
 			if (cancelled) return;
 			if (found) {
 				previousPlayersRef.current = found.player;
+				previousGameStatusRef.current = found.game_state?.status;
 				setLobby(found);
 				checkStillMember(found.player);
 			} else if (!hadInitialLobbyRef.current) {
@@ -86,7 +91,18 @@ export function useLobbyRealtime(
 					}
 				}
 
+				// Only `updateGameSettings` (a restart) ever sets the status back
+				// to Waiting, so this transition reliably means "restarted with
+				// new settings" rather than the normal Playing/Paused/Finished flow.
+				if (
+					updated.game_state?.status === GameStatus.Waiting &&
+					previousGameStatusRef.current !== GameStatus.Waiting
+				) {
+					showToast("La partie a été relancée.", "join");
+				}
+
 				previousPlayersRef.current = updated.player;
+				previousGameStatusRef.current = updated.game_state?.status;
 				setLobby(updated);
 			},
 			() => {

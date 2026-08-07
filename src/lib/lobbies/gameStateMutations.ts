@@ -1,7 +1,18 @@
 import { supabase } from "../supabaseClient";
-import type { gameStateProps, GameStateEnum, lobbyProps, lobbyRowProps } from "../../types";
+import type {
+	gameStateProps,
+	GameStateEnum,
+	lobbyProps,
+	lobbyRowProps,
+	lobbySettingsFormProps,
+	playlistQueueProps,
+} from "../../types";
 import { rowToLobby } from "./mappers";
 import { findLobbyRowByCode } from "./queries";
+import { fetchPlaylistTracks } from "../spotify/playlist";
+import { shuffle } from "lodash";
+
+const UNIQUE_VIOLATION = "23505";
 
 // Reads the current game_state and merges the patch into it rather than
 // overwriting the whole column, so a status change doesn't clobber a
@@ -46,4 +57,58 @@ export async function updateRound(
 	round: number,
 ): Promise<lobbyProps> {
 	return updateGameState(code, { round });
+}
+
+export async function updateGameSettings(
+	code: string,
+	updatedSettings: lobbySettingsFormProps,
+) {
+	const row = await findLobbyRowByCode(code);
+	if (!row) return null;
+
+	const { data, error } = await supabase
+		.from("lobbies")
+		.update({
+			is_public: updatedSettings.public,
+			category: updatedSettings.category,
+			game_state: {
+				...row.game_state,
+				round: 0,
+				mode: updatedSettings.mode,
+				status: "waiting",
+				totalRounds: updatedSettings.rounds,
+				duration: updatedSettings.duration,
+			},
+		})
+		.eq("code", code)
+		.select()
+		.single();
+
+	if (!error && data) {
+		const row = data as lobbyRowProps;
+
+		const tracks = await fetchPlaylistTracks(
+			updatedSettings.category.value,
+			updatedSettings.rounds,
+		);
+		const music_queue: playlistQueueProps = {
+			items: shuffle(tracks),
+			current: 0,
+		};
+
+		const { data: withQueue, error: queueError } = await supabase
+			.from("lobbies")
+			.update({ music_queue })
+			.eq("id", row.id)
+			.select()
+			.single();
+
+		if (queueError) throw queueError;
+		return rowToLobby(withQueue as lobbyRowProps);
+	}
+
+	if (error && error.code !== UNIQUE_VIOLATION) {
+		throw error;
+	}
+	return rowToLobby(data as lobbyRowProps);
 }

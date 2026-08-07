@@ -10,6 +10,12 @@ export function subscribeToPublicLobbies(
 		findPublicLobbies().then(onChange).catch(console.error);
 	};
 
+	// No `is_public` filter here: Realtime's postgres_changes filter is
+	// evaluated against the NEW row on UPDATE, so a public->private toggle
+	// (new row has is_public=false) would never match `is_public=eq.true`
+	// and the change would never reach this callback. Instead we listen to
+	// every change on the table and let `findPublicLobbies()` (called by
+	// `refresh`) do the actual is_public filtering server-side.
 	const channel = supabase
 		.channel("public-lobbies")
 		.on(
@@ -18,7 +24,6 @@ export function subscribeToPublicLobbies(
 				event: "*",
 				schema: "public",
 				table: "lobbies",
-				filter: "is_public=eq.true",
 			},
 			refresh,
 		)
