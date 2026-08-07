@@ -17,6 +17,7 @@ import ScoreboardPanel from "../components/game/ScoreboardPanel";
 import Scoreboard from "../components/game/Scoreboard";
 import LobbySettings from "../components/game/LobbySettings";
 import LobbySettingsPanel from "../components/game/LobbySettingsPanel";
+import LobbyQuestionBox from "../components/game/LobbyQuestionBox";
 import GameStatusBadge from "../components/game/GameStatusBadge";
 import HostActionButton from "../components/game/HostActionButton";
 import PlayerAvatarList from "../components/game/PlayerAvatarList";
@@ -103,12 +104,13 @@ export default function Game() {
 		lastPlayedTrackId?: string;
 	}>({});
 
+	const gameStatus = gameState?.status;
 	useEffect(() => {
-		if (!isHost || !spotifyPlayer.isReady || !gameState) return;
+		if (!isHost || !spotifyPlayer.isReady || !gameStatus) return;
 
 		const { prevStatus: previousStatus, lastPlayedTrackId } =
 			playbackRef.current;
-		const status = gameState.status;
+		const status = gameStatus;
 
 		if (
 			status === GameStatus.Playing &&
@@ -131,14 +133,12 @@ export default function Game() {
 			status === GameStatus.Waiting &&
 			previousStatus !== GameStatus.Waiting
 		) {
-			// A restart resets game_state.status to "waiting" — stop whatever
-			// was playing instead of leaving the old track running.
 			spotifyPlayer.pause();
 			playbackRef.current.lastPlayedTrackId = undefined;
 		}
 
 		playbackRef.current.prevStatus = status;
-	}, [isHost, spotifyPlayer, gameState, currentTrackId]);
+	}, [isHost, spotifyPlayer, gameStatus, currentTrackId]);
 
 	useEffect(() => {
 		// round start came from pause
@@ -203,10 +203,20 @@ export default function Game() {
 			<TopBar />
 			<main className='relative z-10 flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-4 px-4 py-2 sm:px-8 lg:px-12'>
 				<div className='flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-6 lg:grid lg:grid-cols-[1fr_auto_1fr] lg:items-stretch lg:content-stretch'>
-					<div className='hidden min-h-0 lg:block'>
+					<div className='hidden min-h-0 lg:flex lg:flex-col lg:gap-4'>
 						{currentPlayer?.host && (
-							<LobbySettingsPanel lobby={lobby} className='hidden md:flex' />
+							<>
+								<LobbySettingsPanel
+									lobby={lobby}
+									mobileMenuClose={setSettingsOpen}
+									className='hidden md:flex'
+								/>
+							</>
 						)}
+						<LobbyQuestionBox
+							className='hidden md:flex'
+							mode={gameState?.mode}
+						/>
 					</div>
 					<div className='relative flex flex-col shrink-0 gap-y-4 items-center justify-center'>
 						<LobbyHeaderBadges
@@ -378,7 +388,11 @@ export default function Game() {
 					</button>
 				</div>
 				<div className='min-h-0 flex-1 overflow-y-auto px-6 pb-6'>
-					<LobbySettings lobby={lobby} onRestart={setSettingsOpen} />
+					<LobbySettings
+						lobby={lobby}
+						mobileMenuClose={setSettingsOpen}
+						desktopMenuClose={setSettingsOpen}
+					/>
 				</div>
 			</Modal>
 		</PageBackground>

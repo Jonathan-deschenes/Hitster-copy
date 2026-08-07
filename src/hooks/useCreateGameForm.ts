@@ -18,7 +18,7 @@ export function useCreateGameForm() {
 		useState<createGameFormSettingsProps>({
 			name: "",
 			password: "",
-			category: musicStyle[3],
+			category: musicStyle[0],
 			mode: gameModeOptions[0],
 			public: true,
 			rounds: 10,

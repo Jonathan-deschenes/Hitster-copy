@@ -1,4 +1,4 @@
-import type { gameCategoryProps } from "../types";
+import { GameMode, type GameModeEnum, type gameCategoryProps } from "../types";
 
 export const musicStyle: gameCategoryProps[] = [
 	{ value: "2EtWHTBuXqWGpG6JmFkM5O", label: "Summer party" },
@@ -25,6 +25,17 @@ export const gameModeOptions: gameCategoryProps[] = [
 	{ value: "album", label: "Album" },
 	{ value: "titre", label: "Titre" },
 ];
+
+// "aleatoire" is intentionally left out: the round's actual target varies
+// each time, so it has no single fixed question to show.
+export const gameModeQuestions: Partial<Record<GameModeEnum, string>> = {
+	[GameMode.Musique]: "Quel est le titre de cette chanson ?",
+	[GameMode.Titre]: "D'oû vient cette musique ?",
+	[GameMode.Artiste]: "Quel est l'artiste de cette chanson ?",
+	[GameMode.Album]: "Quel est l'album de cette chanson ?",
+	[GameMode.Annee]: "En quelle année cette chanson est-elle sortie ?",
+	[GameMode.Decennie]: "Dans quelle décennie cette chanson est-elle sortie ?",
+};
 
 export const DURATION_MIN = 10;
 export const DURATION_MAX = 60;

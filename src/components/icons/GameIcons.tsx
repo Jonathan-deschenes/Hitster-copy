@@ -38,7 +38,13 @@ export function IconTrophy() {
 export function IconClock() {
 	return (
 		<svg width='16' height='16' viewBox='0 0 20 20' fill='none'>
-			<circle cx='10' cy='10' r='7.25' stroke='currentColor' strokeWidth='1.5' />
+			<circle
+				cx='10'
+				cy='10'
+				r='7.25'
+				stroke='currentColor'
+				strokeWidth='1.5'
+			/>
 			<path
 				d='M10 5.75V10l3 2'
 				stroke='currentColor'
@@ -99,6 +105,19 @@ export function IconChevronDown() {
 	);
 }
 
+export function IconPlus() {
+	return (
+		<svg width='16' height='16' viewBox='0 0 18 18' fill='none'>
+			<path
+				d='M9 3.5v11M3.5 9h11'
+				stroke='currentColor'
+				strokeWidth='1.8'
+				strokeLinecap='round'
+			/>
+		</svg>
+	);
+}
+
 export function IconClose() {
 	return (
 		<svg width='16' height='16' viewBox='0 0 18 18' fill='none'>
@@ -115,7 +134,13 @@ export function IconClose() {
 export function IconSettings() {
 	return (
 		<svg width='18' height='18' viewBox='0 0 24 24' fill='none'>
-			<circle cx='12' cy='12' r='3.25' stroke='currentColor' strokeWidth='1.6' />
+			<circle
+				cx='12'
+				cy='12'
+				r='3.25'
+				stroke='currentColor'
+				strokeWidth='1.6'
+			/>
 			<path
 				d='M12 3.5v2.4M12 18.1v2.4M20.5 12h-2.4M5.9 12H3.5M17.66 6.34l-1.7 1.7M8.04 15.96l-1.7 1.7M17.66 17.66l-1.7-1.7M8.04 8.04l-1.7-1.7'
 				stroke='currentColor'
@@ -161,6 +186,39 @@ export function IconRefresh() {
 				d='M14.5 3.5v3.6h-3.6M3.5 14.5v-3.6h3.6'
 				stroke='currentColor'
 				strokeWidth='1.6'
+				strokeLinecap='round'
+				strokeLinejoin='round'
+			/>
+		</svg>
+	);
+}
+
+export function IconChat() {
+	return (
+		<svg width='30' height='30' viewBox='0 0 24 24' fill='none'>
+			<path
+				d='M4 5.5h16v10.5H9.2L5 20V16H4z'
+				stroke='currentColor'
+				strokeWidth='1.6'
+				strokeLinejoin='round'
+			/>
+			<path
+				d='M8 9.5h8M8 12.5h5'
+				stroke='currentColor'
+				strokeWidth='1.6'
+				strokeLinecap='round'
+			/>
+		</svg>
+	);
+}
+
+export function IconSend() {
+	return (
+		<svg width='16' height='16' viewBox='0 0 18 18' fill='none'>
+			<path
+				d='M15.5 2.5 8.2 9.8M15.5 2.5 10.9 15.5 8.2 9.8 2.5 7.1 15.5 2.5Z'
+				stroke='currentColor'
+				strokeWidth='1.5'
 				strokeLinecap='round'
 				strokeLinejoin='round'
 			/>

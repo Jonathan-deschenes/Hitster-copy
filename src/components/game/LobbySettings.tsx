@@ -16,16 +16,19 @@ import { useEffect, type SetStateAction } from "react";
 
 interface LobbySettingsProps {
 	lobby: lobbyProps;
-	onRestart: React.Dispatch<SetStateAction<boolean>>;
+	mobileMenuClose: React.Dispatch<SetStateAction<boolean>>;
+	desktopMenuClose: React.Dispatch<SetStateAction<boolean>>;
 }
 
 export default function LobbySettings({
 	lobby,
-	onRestart,
+	mobileMenuClose,
+	desktopMenuClose,
 }: LobbySettingsProps) {
 	const { settings, setSettings, handleSubmit } = useLobbySettingsForm(
 		lobby,
-		onRestart,
+		mobileMenuClose,
+		desktopMenuClose,
 	);
 
 	const gameCategory: string = settings.category.label;

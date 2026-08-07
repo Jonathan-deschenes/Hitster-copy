@@ -17,6 +17,9 @@ interface UseSpotifyPlayerOptions {
 	enabled: boolean;
 }
 
+const NOT_READY_MESSAGE =
+	"Lecteur Spotify pas encore prêt, réessaie dans un instant.";
+
 /**
  * Attaches to the shared Spotify Connect device (see playerStore.ts) while
  * `enabled`. The device outlives any single page, so switching lobbies
@@ -35,7 +38,10 @@ export function useSpotifyPlayer({ enabled }: UseSpotifyPlayerOptions) {
 
 	const play = useCallback(
 		async (trackId: string, positionMs = 0) => {
-			if (!deviceId) return;
+			if (!deviceId) {
+				reportSpotifyPlayerError(NOT_READY_MESSAGE);
+				return;
+			}
 			try {
 				await playTrackOnDevice(deviceId, trackId, await getHostAccessToken(), positionMs);
 			} catch (err) {
@@ -46,7 +52,10 @@ export function useSpotifyPlayer({ enabled }: UseSpotifyPlayerOptions) {
 	);
 
 	const pause = useCallback(async () => {
-		if (!deviceId) return;
+		if (!deviceId) {
+			reportSpotifyPlayerError(NOT_READY_MESSAGE);
+			return;
+		}
 		try {
 			await pausePlaybackOnDevice(deviceId, await getHostAccessToken());
 		} catch (err) {
@@ -55,7 +64,10 @@ export function useSpotifyPlayer({ enabled }: UseSpotifyPlayerOptions) {
 	}, [deviceId]);
 
 	const resume = useCallback(async () => {
-		if (!deviceId) return;
+		if (!deviceId) {
+			reportSpotifyPlayerError(NOT_READY_MESSAGE);
+			return;
+		}
 		try {
 			await resumePlaybackOnDevice(deviceId, await getHostAccessToken());
 		} catch (err) {

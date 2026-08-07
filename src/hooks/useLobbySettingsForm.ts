@@ -5,7 +5,8 @@ import { updateGameSettings } from "../lib/lobbies/gameStateMutations";
 
 export function useLobbySettingsForm(
 	lobby: lobbyProps,
-	setSettingsOpen: React.Dispatch<SetStateAction<boolean>>,
+	mobileMenuClose: React.Dispatch<SetStateAction<boolean>>,
+	desktopMenuClose: React.Dispatch<SetStateAction<boolean>>,
 ) {
 	const [settings, setSettings] = useState<lobbySettingsFormProps>({
 		mode: lobby.game_state?.mode ?? gameModeOptions[0],
@@ -17,7 +18,8 @@ export function useLobbySettingsForm(
 
 	async function handleSubmit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setSettingsOpen(false);
+		mobileMenuClose(false);
+		desktopMenuClose(false);
 		await updateGameSettings(lobby.generatedCode, settings);
 	}
 

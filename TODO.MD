@@ -8,12 +8,13 @@
 
 ## Option de la partie
 
-[ ] Recommencer la partie  
-[ ] Choisir mode de jeu (musique, artiste, année, décennie, album)  
-[ ] Choisir nombre de round  
-[ ] Changer la playlist  
-[ ] Modifier la visibilité du lobby (privé, publique)  
-[ ] Modifier la durée des extraits
+[X] Recommencer la partie  
+[X] Choisir mode de jeu (musique, artiste, année, décennie, album)  
+[ ] Implémenter mode de jeu aléatoire
+[X] Choisir nombre de round  
+[X] Changer la playlist  
+[X] Modifier la visibilité du lobby (privé, publique)  
+[X] Modifier la durée des extraits
 
 ## Jouabilité de la partie
 
@@ -34,5 +35,5 @@
 ## UI/UX
 
 [X] Leaderboard caché avec clics  
-[ ] Options parties caché avec clics  
+[X] Options parties caché avec clics  
 [X] Réactivité mobile

@@ -43,7 +43,30 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function callPlayerEndpoint(
+// Keyed by `path:deviceId` so an overlapping call for the same command
+// (e.g. two effect runs triggered in quick succession by unrelated realtime
+// updates, or React StrictMode's dev-only double-invoke) reuses the request
+// already in flight instead of firing a second one and doubling any error.
+const inFlightRequests = new Map<string, Promise<void>>();
+
+function callPlayerEndpoint(
+	path: string,
+	deviceId: string,
+	accessToken: string,
+	body?: object,
+): Promise<void> {
+	const key = `${path}:${deviceId}`;
+	const existing = inFlightRequests.get(key);
+	if (existing) return existing;
+
+	const request = sendPlayerRequest(path, deviceId, accessToken, body).finally(
+		() => inFlightRequests.delete(key),
+	);
+	inFlightRequests.set(key, request);
+	return request;
+}
+
+async function sendPlayerRequest(
 	path: string,
 	deviceId: string,
 	accessToken: string,

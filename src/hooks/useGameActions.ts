@@ -44,7 +44,11 @@ export function useGameActions({
 	const players = lobby?.player;
 	const gameState = lobby?.game_state;
 
-	const spotifyPlayer = useSpotifyPlayer({ enabled: !!currentPlayer?.host });
+	// Deliberately not scoped to `currentPlayer?.host`: any Spotify-connected
+	// player pre-warming a device while they're just a regular player is what
+	// lets a later promotion resume instantly instead of racing Spotify's
+	// "device not yet controllable" window right at handoff time.
+	const spotifyPlayer = useSpotifyPlayer({ enabled: true });
 
 	// Kept fresh without re-subscribing the presence channel on every lobby update.
 	const playersRef = useRef(players);
