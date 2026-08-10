@@ -11,6 +11,7 @@ import { rowToLobby } from "./mappers";
 import { getRandomCode } from "./codeGenerator";
 import { fetchPlaylistTracks } from "../spotify/playlist";
 import shuffle from "lodash/shuffle";
+import { resolveGameQuestion } from "../../util";
 
 const UNIQUE_VIOLATION = "23505";
 
@@ -45,6 +46,7 @@ export async function createLobby(
 					status: "waiting",
 					turn: 0,
 					round: 0,
+					question: resolveGameQuestion(settings.mode),
 					totalRounds: settings.rounds,
 					duration: settings.duration,
 				},

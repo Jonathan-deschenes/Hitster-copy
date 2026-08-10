@@ -36,6 +36,7 @@ import { isSpotifyConnected } from "../lib/spotify/auth";
 import { updateGameStatus } from "../lib/lobbies";
 import { updateGameSettings } from "../lib/lobbies/gameStateMutations";
 import { showToast } from "../lib/toast";
+import { DEFAULT_QUESTION } from "../constants/createGameOptions";
 
 export default function Game() {
 	// Get current code and user
@@ -215,7 +216,7 @@ export default function Game() {
 						)}
 						<LobbyQuestionBox
 							className='hidden md:flex'
-							mode={gameState?.mode}
+							question={gameState?.question ?? DEFAULT_QUESTION}
 						/>
 					</div>
 					<div className='relative flex flex-col shrink-0 gap-y-4 items-center justify-center'>

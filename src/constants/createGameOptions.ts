@@ -26,13 +26,14 @@ export const gameModeOptions: gameCategoryProps[] = [
 	{ value: "titre", label: "Titre" },
 ];
 
+export const DEFAULT_QUESTION = "Quelle est cette chanson ?";
+
 // "aleatoire" is intentionally left out: the round's actual target varies
 // each time, so it has no single fixed question to show.
 export const gameModeQuestions: Partial<Record<GameModeEnum, string>> = {
 	[GameMode.Musique]: "Quel est le titre de cette chanson ?",
 	[GameMode.Titre]: "D'oû vient cette musique ?",
 	[GameMode.Artiste]: "Quel est l'artiste de cette chanson ?",
-	[GameMode.Album]: "Quel est l'album de cette chanson ?",
 	[GameMode.Annee]: "En quelle année cette chanson est-elle sortie ?",
 	[GameMode.Decennie]: "Dans quelle décennie cette chanson est-elle sortie ?",
 };

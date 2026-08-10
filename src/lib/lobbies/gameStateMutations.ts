@@ -11,6 +11,7 @@ import { rowToLobby } from "./mappers";
 import { findLobbyRowByCode } from "./queries";
 import { fetchPlaylistTracks } from "../spotify/playlist";
 import { shuffle } from "lodash";
+import { resolveGameQuestion } from "../../util";
 
 const UNIQUE_VIOLATION = "23505";
 
@@ -59,6 +60,13 @@ export async function updateRound(
 	return updateGameState(code, { round });
 }
 
+export async function updateGameQuestion(
+	code: string,
+	question: string,
+): Promise<lobbyProps> {
+	return updateGameState(code, { question });
+}
+
 export async function updateGameSettings(
 	code: string,
 	updatedSettings: lobbySettingsFormProps,
@@ -76,6 +84,7 @@ export async function updateGameSettings(
 				round: 0,
 				mode: updatedSettings.mode,
 				status: "waiting",
+				question: resolveGameQuestion(updatedSettings.mode),
 				totalRounds: updatedSettings.rounds,
 				duration: updatedSettings.duration,
 			},

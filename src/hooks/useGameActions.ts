@@ -10,8 +10,13 @@ import {
 	updateRound,
 } from "../lib/lobbies";
 import { promotePlayer } from "../lib/lobbies/lobbyMutations";
-import { pickRandomOtherPlayer, pickSuccessorPlayer } from "../util";
+import {
+	pickRandomOtherPlayer,
+	pickSuccessorPlayer,
+	resolveGameQuestion,
+} from "../util";
 import { useSpotifyPlayer } from "./useSpotifyPlayer";
+import { updateGameQuestion } from "../lib/lobbies/gameStateMutations";
 
 interface UseGameActionsParams {
 	code?: string;
@@ -139,6 +144,10 @@ export function useGameActions({
 
 	async function handleNewRound() {
 		if (!code || !gameState) return;
+
+		const question = resolveGameQuestion(gameState.mode);
+
+		await updateGameQuestion(code, question);
 		await updateRound(code, gameState.round + 1);
 		await updateGameStatus(code, GameStatus.Playing);
 	}

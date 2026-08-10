@@ -63,6 +63,7 @@ export type gameStateProps = {
 	status: GameStateEnum;
 	turn: number;
 	round: number;
+	question: string;
 	totalRounds: number;
 	duration: number;
 };

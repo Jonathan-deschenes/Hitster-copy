@@ -1,24 +1,18 @@
 import { useState, type FormEvent } from "react";
 import { PrimaryButton } from "../Button";
 import { IconChat, IconSend } from "../icons/GameIcons";
-import { gameModeQuestions } from "../../constants/createGameOptions";
-import type { GameModeEnum } from "../../types";
-
-const DEFAULT_QUESTION = "Quelle est cette chanson ?";
 
 interface LobbyQuestionBoxProps {
 	className?: string;
-	mode?: GameModeEnum;
+	question: string;
 }
 
 export default function LobbyQuestionBox({
 	className = "",
-	mode,
+	question,
 }: LobbyQuestionBoxProps) {
 	const [answer, setAnswer] = useState("");
 	const [submitted, setSubmitted] = useState(false);
-
-	const question = (mode && gameModeQuestions[mode]) || DEFAULT_QUESTION;
 
 	function handleSubmit(e: FormEvent<HTMLFormElement>) {
 		e.preventDefault();
