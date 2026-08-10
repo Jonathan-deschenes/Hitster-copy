@@ -67,6 +67,46 @@ export async function updateGameQuestion(
 	return updateGameState(code, { question });
 }
 
+export async function updatePlayerAnswer(
+	code: string,
+	answer: string,
+	playerId: string,
+): Promise<lobbyProps | null> {
+	const row = await findLobbyRowByCode(code);
+	if (!row) return null;
+
+	const players = row.players.map((player) =>
+		player.id === playerId ? { ...player, answer } : player,
+	);
+
+	const { data, error } = await supabase
+		.from("lobbies")
+		.update({ players })
+		.eq("code", code)
+		.select()
+		.single();
+
+	if (error) throw error;
+	return rowToLobby(data as lobbyRowProps);
+}
+
+export async function resetPlayerAnswer(code: string) {
+	const row = await findLobbyRowByCode(code);
+	if (!row) return null;
+
+	const players = row.players.map((player) => ({ ...player, answer: "" }));
+
+	const { data, error } = await supabase
+		.from("lobbies")
+		.update({ players })
+		.eq("code", code)
+		.select()
+		.single();
+
+	if (error) throw error;
+	return rowToLobby(data as lobbyRowProps);
+}
+
 export async function updateGameSettings(
 	code: string,
 	updatedSettings: lobbySettingsFormProps,

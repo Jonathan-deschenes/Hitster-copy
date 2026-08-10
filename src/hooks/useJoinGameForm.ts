@@ -14,6 +14,9 @@ export function useJoinGameForm() {
 	const [player, setPlayer] = useState<playerProps>({
 		id: generateUniqueId(),
 		pseudo: savedPseudo,
+		host: false,
+		score: 0,
+		answer: "",
 	});
 
 	const [code, setCode] = useState("");

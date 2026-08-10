@@ -1,7 +1,12 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { GameStatus } from "../types";
-import type { GameStateEnum, lobbyProps, playerProps } from "../types";
+import type {
+	GameStateEnum,
+	lobbyProps,
+	musicItemsProps,
+	playerProps,
+} from "../types";
 import {
 	deleteLobby,
 	leaveLobby,
@@ -16,7 +21,11 @@ import {
 	resolveGameQuestion,
 } from "../util";
 import { useSpotifyPlayer } from "./useSpotifyPlayer";
-import { updateGameQuestion } from "../lib/lobbies/gameStateMutations";
+import {
+	resetPlayerAnswer,
+	updateGameQuestion,
+	updatePlayerAnswer,
+} from "../lib/lobbies/gameStateMutations";
 
 interface UseGameActionsParams {
 	code?: string;
@@ -147,6 +156,7 @@ export function useGameActions({
 
 		const question = resolveGameQuestion(gameState.mode);
 
+		await resetPlayerAnswer(code);
 		await updateGameQuestion(code, question);
 		await updateRound(code, gameState.round + 1);
 		await updateGameStatus(code, GameStatus.Playing);
@@ -159,11 +169,18 @@ export function useGameActions({
 		[GameStatus.Finished]: handleNewRound,
 	};
 
+	async function handlePlayerAnswer(answer: string, playerId: string) {
+		if (!code || !answer || !playerId) return;
+
+		await updatePlayerAnswer(code, answer, playerId);
+	}
+
 	return {
 		currentPlayer,
 		handleLeaving,
 		handlePlayerKick,
 		handlePlayerPromotion,
+		handlePlayerAnswer,
 		hostActionByStatus,
 	};
 }

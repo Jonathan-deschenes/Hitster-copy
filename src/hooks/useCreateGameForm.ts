@@ -28,6 +28,8 @@ export function useCreateGameForm() {
 		id: generateUniqueId(),
 		pseudo: savedPseudo,
 		host: true,
+		score: 0,
+		answer: "",
 	});
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);

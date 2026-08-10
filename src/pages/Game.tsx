@@ -58,6 +58,7 @@ export default function Game() {
 		handleLeaving,
 		handlePlayerKick,
 		handlePlayerPromotion,
+		handlePlayerAnswer,
 		hostActionByStatus,
 	} = useGameActions({
 		code,
@@ -197,7 +198,7 @@ export default function Game() {
 	}
 
 	// handle redirection for kicked player
-	if (kicked) return <Navigate to={"/"} />;
+	if (kicked || !current) return <Navigate to={"/"} />;
 
 	return (
 		<PageBackground>
@@ -217,6 +218,10 @@ export default function Game() {
 						<LobbyQuestionBox
 							className='hidden md:flex'
 							question={gameState?.question ?? DEFAULT_QUESTION}
+							answerAction={handlePlayerAnswer}
+							currentPlayer={current}
+							gameState={gameState}
+							players={lobby.player}
 						/>
 					</div>
 					<div className='relative flex flex-col shrink-0 gap-y-4 items-center justify-center'>
