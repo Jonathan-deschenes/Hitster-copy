@@ -73,6 +73,18 @@ export type gameStateProps = {
 	questionMode: GameModeEnum;
 	totalRounds: number;
 	duration: number;
+	/**
+	 * Epoch ms at which the current round's track should be at position 0.
+	 * Shifted forward on resume so paused time doesn't count against the round.
+	 *
+	 * This is what makes playback survive a host handoff: the promoted host
+	 * holds no Spotify context of its own, so it reconstructs where the music
+	 * belongs from this timestamp instead of restarting the track. Optional
+	 * because lobbies created before it existed don't carry it.
+	 */
+	roundStartedAt?: number;
+	/** Elapsed ms frozen while `status === Paused`; absent while playing. */
+	pausedElapsedMs?: number;
 };
 
 export type playerProps = {

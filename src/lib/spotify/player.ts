@@ -39,8 +39,35 @@ const TRANSIENT_RETRY_STATUSES = new Set([403, 404]);
 const MAX_TRANSIENT_RETRIES = 4;
 const TRANSIENT_RETRY_DELAY_MS = 400;
 
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+class AbortedError extends Error {}
+
+/**
+ * Whether a rejection is just "a newer command for this device took over".
+ * Callers should stay quiet about those — the supersession was deliberate, and
+ * the command that replaced it reports its own outcome.
+ */
+export function isPlaybackAborted(error: unknown): boolean {
+	return (
+		error instanceof AbortedError ||
+		(error instanceof DOMException && error.name === "AbortError")
+	);
+}
+
+/** Rejects with `AbortedError` as soon as `signal` fires, instead of sleeping it out. */
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const timeoutId = setTimeout(() => {
+			signal.removeEventListener("abort", onAbort);
+			resolve();
+		}, ms);
+
+		function onAbort() {
+			clearTimeout(timeoutId);
+			reject(new AbortedError());
+		}
+
+		signal.addEventListener("abort", onAbort, { once: true });
+	});
 }
 
 // Spotify Connect applies one command at a time per device, and a command that
@@ -50,15 +77,30 @@ function sleep(ms: number): Promise<void> {
 // retry loop below — stops a stale command from landing after a newer one.
 const deviceQueues = new Map<string, Promise<unknown>>();
 
-function enqueue<T>(deviceId: string, task: () => Promise<T>): Promise<T> {
+// Latest intent wins. A command stuck in the retry loop below can hold its
+// device for seconds while the round runs on, and whatever it eventually
+// achieves is already out of date — the newer command is the one that reflects
+// the game. Aborting the older one frees the queue immediately and, for two
+// `play`s in a row, stops the older track from being audible at all.
+const deviceAborts = new Map<string, AbortController>();
+
+function enqueue<T>(
+	deviceId: string,
+	task: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+	deviceAborts.get(deviceId)?.abort();
+	const controller = new AbortController();
+	deviceAborts.set(deviceId, controller);
+
 	const previous = deviceQueues.get(deviceId) ?? Promise.resolve();
+	const run = () => task(controller.signal);
 	// Runs on both settle paths: one failed command must not strand the queue.
-	const run = previous.then(task, task);
+	const settled = previous.then(run, run);
 	deviceQueues.set(
 		deviceId,
-		run.catch(() => undefined),
+		settled.catch(() => undefined),
 	);
-	return run;
+	return settled;
 }
 
 // Keyed by `command:deviceId` so an overlapping call for the same command
@@ -75,14 +117,14 @@ function callPlayerEndpoint(
 	path: string,
 	deviceId: string,
 	accessToken: string,
-	body?: object,
+	options: { retries: number; body?: object },
 ): Promise<void> {
 	const key = `${command}:${deviceId}`;
 	const existing = inFlightRequests.get(key);
 	if (existing) return existing;
 
-	const request = enqueue(deviceId, () =>
-		sendPlayerRequest(path, deviceId, accessToken, body),
+	const request = enqueue(deviceId, (signal) =>
+		sendPlayerRequest(path, deviceId, accessToken, signal, options),
 	).finally(() => inFlightRequests.delete(key));
 	inFlightRequests.set(key, request);
 	return request;
@@ -92,7 +134,8 @@ async function sendPlayerRequest(
 	path: string,
 	deviceId: string,
 	accessToken: string,
-	body?: object,
+	signal: AbortSignal,
+	{ retries, body }: { retries: number; body?: object },
 ): Promise<void> {
 	const url = new URL(`https://api.spotify.com/v1/me/player/${path}`);
 	url.searchParams.set("device_id", deviceId);
@@ -105,6 +148,7 @@ async function sendPlayerRequest(
 				"Content-Type": "application/json",
 			},
 			body: body ? JSON.stringify(body) : undefined,
+			signal,
 		});
 
 		// 204 No Content on success.
@@ -121,8 +165,8 @@ async function sendPlayerRequest(
 			TRANSIENT_RETRY_STATUSES.has(response.status) &&
 			!text.includes("PREMIUM_REQUIRED");
 
-		if (isTransient && attempt < MAX_TRANSIENT_RETRIES) {
-			await sleep(TRANSIENT_RETRY_DELAY_MS * (attempt + 1));
+		if (isTransient && attempt < retries) {
+			await sleep(TRANSIENT_RETRY_DELAY_MS * (attempt + 1), signal);
 			continue;
 		}
 
@@ -142,8 +186,13 @@ export function playTrackOnDevice(
 	// Per track: two different tracks are two different intents, and only a
 	// repeat of the same one is safe to collapse.
 	return callPlayerEndpoint(`play:${trackId}`, "play", deviceId, accessToken, {
-		uris: [`spotify:track:${trackId}`],
-		position_ms: positionMs,
+		// Worth waiting out the "not yet controllable" window: without this the
+		// round has no audio at all.
+		retries: MAX_TRANSIENT_RETRIES,
+		body: {
+			uris: [`spotify:track:${trackId}`],
+			position_ms: positionMs,
+		},
 	});
 }
 
@@ -152,16 +201,18 @@ export function pausePlaybackOnDevice(
 	deviceId: string,
 	accessToken: string,
 ): Promise<void> {
-	return callPlayerEndpoint("pause", "pause", deviceId, accessToken);
+	// No retries: reaching here means the SDK reported nothing playing locally,
+	// so a 403 almost certainly means there was nothing to pause. Retrying it
+	// would block the device queue for seconds over a command that doesn't
+	// matter, delaying the next track.
+	return callPlayerEndpoint("pause", "pause", deviceId, accessToken, {
+		retries: 0,
+	});
 }
 
-/**
- * Resumes from the current paused position instead of restarting the track.
- * Fallback for when the SDK has no local state — prefer `resumeLocalPlayback`.
- */
-export function resumePlaybackOnDevice(
-	deviceId: string,
-	accessToken: string,
-): Promise<void> {
-	return callPlayerEndpoint("resume", "play", deviceId, accessToken);
-}
+// There is deliberately no `resumePlaybackOnDevice`. `PUT /play` with no body
+// asks a device to resume the context it already holds, so it only ever worked
+// on a device the SDK could have resumed locally anyway — and on one that holds
+// nothing (a host promoted mid-game) it is a guaranteed
+// `403 Restriction violated`. Callers start the track at the round's position
+// instead; see `useSpotifyPlayer.resume`.

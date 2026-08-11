@@ -13,6 +13,7 @@ import { getRandomCode } from "./codeGenerator";
 import { fetchPlaylistTracks } from "../spotify/playlist";
 import shuffle from "lodash/shuffle";
 import { resolveGameQuestion } from "../../util";
+import { elapsedMs } from "../playback";
 
 const UNIQUE_VIOLATION = "23505";
 
@@ -174,9 +175,17 @@ export async function promotePlayer(
 	// the outgoing host's browser while the game keeps ticking with no one
 	// driving playback. Pause so the new host can resume once their own
 	// device is ready.
+	//
+	// Freezing the clock is what lets them resume *in the right place*: their
+	// device holds no Spotify context, so it can only start the track fresh,
+	// and without this the handoff gap would be counted as round time.
 	const game_state =
 		row.game_state.status === GameStatus.Playing
-			? { ...row.game_state, status: GameStatus.Paused }
+			? {
+					...row.game_state,
+					status: GameStatus.Paused,
+					pausedElapsedMs: elapsedMs(row.game_state),
+				}
 			: row.game_state;
 
 	const { data: updated, error } = await supabase

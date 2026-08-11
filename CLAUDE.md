@@ -57,6 +57,7 @@ pages/  →  hooks/  →  lib/{lobbies,spotify,scoring}  →  lib/supabaseClient
 | `src/hooks/` | Stateful glue: `useLobbyRealtime`, `useGameActions`, `useSpotifyPlayer`, `useMusicQueue`, plus the form hooks. |
 | `src/lib/lobbies/` | **Every** Supabase read and write, split by concern. |
 | `src/lib/scoring/` | Pure grading logic. No imports outside `types`. |
+| `src/lib/playback/` | Pure round clock (`elapsedMs`, `remainingSeconds`) and `resolvePlaybackIntent`. No imports outside `types`. |
 | `src/lib/spotify/` | `auth` (PKCE), `playerStore` (singleton device), `player` (Web API calls), `playlist` (Edge Function call). |
 | `src/types/index.ts` | All shared types. Naming convention is `somethingProps`. |
 | `src/constants/createGameOptions.ts` | Playlists, game modes, question text, duration bounds. |
@@ -77,9 +78,11 @@ lobbies
   password_hash  text          -- bcrypt, checked client-side in useJoinGameForm
   is_public      boolean
   category       jsonb         -- the chosen Spotify playlist { value, label }
-  game_state     jsonb         -- gameStateProps: status, mode, questionMode, round, duration…
+  game_state     jsonb         -- gameStateProps: status, mode, questionMode, round, duration,
+                               --   roundStartedAt/pausedElapsedMs (the round clock)…
   players        jsonb         -- playerProps[]: id, pseudo, host, score, answer, roundPoints…
-  music_queue    jsonb         -- playlistQueueProps: { items, current }
+  music_queue    jsonb         -- playlistQueueProps: { items, current } — `current` is written
+                               --   only by startRound, derived from game_state.round
 ```
 
 Four consequences that matter every time you touch this:
@@ -116,18 +119,37 @@ waiting  ──start──►  playing  ◄──resume/pause──►  paused
 
 The status lives in `game_state.status` (`GameStatus` in `src/types/index.ts`).
 
-**Host presses a button** → `hostActionByStatus` (`src/hooks/useGameActions.ts:160`) maps the
-current status to a handler. `handleNewRound` resets answers, draws the next question, increments
-`round`, and flips to `playing`.
+**Host presses a button** → `hostActionByStatus` (`src/hooks/useGameActions.ts`) maps the
+current status to a handler. Starting the game and starting the next round are the **same
+operation**, `startRound`.
 
-**Every client runs the countdown** (`src/pages/Game.tsx:224`), but **only the host ends the
-round.** Scoring reads and rewrites the whole `players` array, so if each browser did it they would
-race each other into clobbering scores. Non-host clients just stop at 0 and wait for the realtime
-update.
+**`startRound` is one atomic write.** Cleared answers, the question, `round`, `status`, the round
+clock and `music_queue.current` all go out in a single `update`. Two rules hold it together:
+
+- **`current` is derived from `round`, never incremented.** It used to be advanced from
+  `Game.tsx` by *every* client, so N browsers each ran a read-modify-write on `music_queue`
+  from their own snapshot — a single stale writer skipped a track (or rewound the queue) for
+  everyone, permanently, since the queue holds exactly `totalRounds` items.
+- **Clients never see a half-started round.** This was four sequential writes, so `playing`
+  arrived before the new track and the countdown started a round-trip ahead of the audio.
+
+**The countdown is derived, not decremented.** `game_state.roundStartedAt` is the epoch ms at
+which the round's track should be at position 0; every client computes
+`remainingSeconds` (`src/lib/playback/`) against it, so nobody drifts and a mid-round refresh
+lands on the right second. `pauseRound` freezes the elapsed time into `pausedElapsedMs`;
+`resumeRound` rewinds `roundStartedAt` by it, so paused time never counts.
+
+The one trade-off: the timestamp comes from the writing client's `Date.now()`, so a player
+whose system clock is badly skewed sees a skewed countdown. Values are clamped to
+`[0, duration]`, so it degrades rather than breaking.
+
+**Only the host ends the round.** Scoring reads and rewrites the whole `players` array, so if
+each browser did it they would race each other into clobbering scores. Non-host clients just
+sit at 0 and wait for the realtime update.
 
 Two things can end a round, and both funnel through `finalizeRound`:
-- the countdown reaching 0 (`Game.tsx:224`)
-- every player having answered (`Game.tsx:289`) — no reason to run the clock down
+- the countdown reaching 0
+- every player having answered — no reason to run the clock down
 
 Double-payout is guarded twice: `roundFinalizedRef` on the client, and a `status === Finished`
 check inside `finishRound` (`src/lib/lobbies/gameStateMutations.ts:82`). The ref is deliberately a
@@ -136,6 +158,12 @@ number would then match the new game's first round and block it from ever ending
 
 `finishRound` writes scores **and** status in a single update, so the reveal never appears with the
 previous round's points still on screen.
+
+**The track keeps playing through the reveal.** `finished` resolves to the `idle` intent, not
+`pause` — players get to hear the song they were guessing at. It has to be `idle` rather than a
+`play`: by then `elapsedMs` has run past the round duration and keeps growing, so re-issuing a
+position would seek past the end of the track. The next `startRound` replaces it, and "relancer la
+partie" (→ `waiting`) stops it.
 
 ### `mode` vs `questionMode`
 
@@ -205,21 +233,44 @@ used to race Spotify's backend teardown of the previous device and produced spur
 unconditionally, not just for the host. That is intentional: a player who already has a device
 ready resumes instantly on promotion instead of racing Spotify's "not yet controllable" window.
 
-**Playback commands are serialized and deduped** (`player.ts`). Spotify Connect applies one command
-at a time per device and answers an overlapping one with `403 Restriction violated`, so requests are
-chained per device (`deviceQueues`) and in-flight ones are collapsed by `command:deviceId`. Transient
-403/404 are retried with backoff; `PREMIUM_REQUIRED` is a permanent rejection and is never retried.
+**Playback is a reconciler, not a state machine.** `resolvePlaybackIntent` (`src/lib/playback/`)
+derives what the device should be doing from the lobby row alone — it has no memory. `Game.tsx`
+applies the result and uses `appliedRef` only to avoid re-issuing an identical command. The old
+design read a per-tab ref of the previous status, which a promoted host **never populated** (its
+effect early-returned all game while it wasn't host), so a fresh host acted on beliefs it never
+formed and issued commands its device could not honour.
+
+**Playback commands are serialized, deduped, and superseded** (`player.ts`). Spotify Connect applies
+one command at a time per device and answers an overlapping one with `403 Restriction violated`, so
+requests are chained per device (`deviceQueues`) and in-flight ones are collapsed by
+`command:deviceId`. Enqueuing a command **aborts the previous one** for that device
+(`deviceAborts`): a command stuck in the retry loop holds the queue for seconds while the round runs
+on, and what it eventually achieves is already stale. Callers detect that with `isPlaybackAborted`
+and stay quiet — a superseded command is not a failure to report.
+
+Retries are per command: `play` retries transient 403/404 (a device fresh from `ready` really does
+need that window), `pause` does not (reaching the Web API means the SDK saw nothing playing, so
+there was probably nothing to pause). `PREMIUM_REQUIRED` is a permanent rejection and is never
+retried.
 
 **Prefer the SDK transport controls.** `pauseLocalPlayback` / `resumeLocalPlayback` act on what the
 device is really doing and no-op harmlessly; the Web API equivalents throw 403 if the state already
-matches. Fall back to `pausePlaybackOnDevice` / `resumePlaybackOnDevice` only when the SDK holds no
-local state.
+matches. `resumeLocalPlayback(trackId)` takes the track deliberately — it returns false unless
+*this* device already holds *that* track, so a new track can't be swallowed as a no-op resume.
+
+**There is no `resumePlaybackOnDevice`, and adding one back is a bug.** `PUT /play` with no body
+asks a device to resume the context it already holds. On a device that holds nothing — precisely a
+host promoted mid-game — it is a guaranteed `403 Restriction violated`. `useSpotifyPlayer.resume`
+falls back to *starting* the track at the round's position instead, which is why it needs
+`(trackId, positionMs)`.
 
 **Host handoff.** `promotePlayer` force-pauses a `playing` game so stale audio doesn't keep running
-on the outgoing host's browser. Disconnects that skip the normal leave path (closed tab, crash, lost
-network) are caught by Supabase presence in `useGameActions`; every client runs the same logic and
-`pickSuccessorPlayer` picks deterministically (lowest id), so exactly one of them acts without any
-coordination.
+on the outgoing host's browser, and **freezes the round clock** into `pausedElapsedMs` — otherwise
+the handoff gap would be counted as round time. Because the clock is in the row, the new host can
+pick the track up at the right second even though their device holds no Spotify context.
+Disconnects that skip the normal leave path (closed tab, crash, lost network) are caught by Supabase
+presence in `useGameActions`; every client runs the same logic and `pickSuccessorPlayer` picks
+deterministically (lowest id), so exactly one of them acts without any coordination.
 
 **Tokens.** The host's PKCE tokens live in `localStorage` under `SPOTIFY_HOST_AUTH`. The Edge
 Function's catalog token lives in the `spotify_catalog_token` table rather than a static secret,
@@ -261,9 +312,9 @@ focus, Escape and scroll-lock themselves.
 ## Gotchas
 
 - **The `lib/lobbies` barrel is incomplete.** `index.ts` does *not* re-export `updateGameSettings`,
-  `updatePlayerAnswer`, `resetPlayerAnswer`, `updateGameQuestion` or `promotePlayer`. Those are
-  imported from their modules directly (`../lib/lobbies/gameStateMutations`). Don't assume a
-  function is missing just because it isn't in the barrel.
+  `updatePlayerAnswer` or `promotePlayer`. Those are imported from their modules directly
+  (`../lib/lobbies/gameStateMutations`). Don't assume a function is missing just because it isn't
+  in the barrel.
 
 - **Realtime `postgres_changes` filters evaluate against the NEW row on UPDATE.** A public→private
   toggle would never match `is_public=eq.true`, so `subscribeToPublicLobbies` subscribes to *all*
@@ -276,7 +327,13 @@ focus, Escape and scroll-lock themselves.
 - **`createGameOptions.ts:9`** contains a `"Test"` playlist marked `// remove in production`.
 
 - **Read-modify-write races** — see the lobby row section above. Before adding a mutation, ask
-  which clients can call it concurrently.
+  which clients can call it concurrently. The queue-advance bug is the cautionary tale: an
+  innocuous `current + 1` in a `useEffect` ran on every client at once.
+
+- **Don't split a round transition into several writes.** Every `update` is its own realtime
+  broadcast, so N writes means N renders on every client, each seeing a partial state.
+  `updateRound` / `updateGameQuestion` / `resetPlayerAnswer` were removed for this reason —
+  `startRound` replaces all three.
 
 ---
 

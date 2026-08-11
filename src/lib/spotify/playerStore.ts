@@ -33,8 +33,24 @@ let connectPromise: Promise<void> | null = null;
 let player: Spotify.Player | null = null;
 const listeners = new Set<() => void>();
 
+/**
+ * Skips the notify when nothing actually changed.
+ *
+ * `useSyncExternalStore` compares snapshots by identity, so allocating a new
+ * object unconditionally re-rendered every consumer — and re-ran the playback
+ * effect, which takes this store's value as a dependency. Reporting the *same*
+ * error twice is the common case (the same failure re-reported on the retry),
+ * and it used to churn the whole tree.
+ */
 function setState(patch: Partial<PlayerStoreState>) {
-	state = { ...state, ...patch };
+	const next = { ...state, ...patch };
+
+	const unchanged = (Object.keys(next) as (keyof PlayerStoreState)[]).every(
+		(key) => next[key] === state[key],
+	);
+	if (unchanged) return;
+
+	state = next;
 	for (const listener of listeners) listener();
 }
 
@@ -76,8 +92,7 @@ export function ensureSpotifyPlayer(): Promise<void> {
  * command with `403 Player command failed: Restriction violated`.
  *
  * Both return false when the SDK holds no state for this device (Spotify isn't
- * playing through us), leaving the caller to decide whether the Web API is
- * still worth a try.
+ * playing through us), leaving the caller to decide what to do instead.
  */
 export async function pauseLocalPlayback(): Promise<boolean> {
 	const playbackState = await player?.getCurrentState();
@@ -86,9 +101,18 @@ export async function pauseLocalPlayback(): Promise<boolean> {
 	return true;
 }
 
-export async function resumeLocalPlayback(): Promise<boolean> {
+/**
+ * Only a genuine resume: the device must already hold `trackId`.
+ *
+ * Checking the track is what keeps this honest. Without it, a device still
+ * sitting on the previous round's track would report "resumed" and the new
+ * track would never start — and a device that holds nothing at all (a host
+ * promoted mid-game) would fall through to a Web API call that can only 403.
+ */
+export async function resumeLocalPlayback(trackId: string): Promise<boolean> {
 	const playbackState = await player?.getCurrentState();
 	if (!playbackState) return false;
+	if (playbackState.track_window?.current_track?.id !== trackId) return false;
 	if (playbackState.paused) await player?.resume();
 	return true;
 }

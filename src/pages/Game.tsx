@@ -39,6 +39,8 @@ import {
 import { useMusicQueue } from "../hooks/useMusicQueue";
 import { useSpotifyPlayer } from "../hooks/useSpotifyPlayer";
 import { isSpotifyConnected } from "../lib/spotify/auth";
+import { remainingSeconds, resolvePlaybackIntent } from "../lib/playback";
+import type { PlaybackIntent } from "../lib/playback";
 import { finishRound, updateGameStatus } from "../lib/lobbies";
 import { updateGameSettings } from "../lib/lobbies/gameStateMutations";
 import { showToast } from "../lib/toast";
@@ -72,9 +74,9 @@ export default function Game() {
 		currentPlayerId: current,
 	});
 
-	// Musics queue, synced from the lobby row (generated once at creation)
-	const [musicQueue, currentTrackIndex, incrementCurrentTrackIndex] =
-		useMusicQueue(lobby?.music_queue, code);
+	// Musics queue, synced from the lobby row (generated once at creation).
+	// Read-only: `startRound` owns `current` server-side.
+	const [musicQueue, currentTrackIndex] = useMusicQueue(lobby?.music_queue);
 
 	// current game state
 	const gameState = lobby?.game_state;
@@ -83,8 +85,9 @@ export default function Game() {
 	const isWaiting = gameState?.status === GameStatus.Waiting;
 	const isFinished = gameState?.status === GameStatus.Finished;
 
-	// current round timer
-	const [counter, setCounter] = useState<number>(gameState?.duration ?? 30);
+	// Drives the round timer: the countdown is derived from `gameState`'s clock,
+	// so all this holds is "when is now" to recompute it against.
+	const [now, setNow] = useState(() => Date.now());
 	// host-only, mobile-only player management modal (kick/promote)
 	const [manageOpen, setManageOpen] = useState(false);
 	// host-only, mobile-only lobby settings modal
@@ -92,7 +95,11 @@ export default function Game() {
 
 	const prevStatus = useRef<GameStateEnum | undefined>(undefined);
 
-	const isHost = !!currentPlayer?.host && isSpotifyConnected();
+	// Scoring duty, which a host without Spotify still owes. Distinct from
+	// `isHost` below, which additionally requires a connected device and gates
+	// playback only.
+	const isHostPlayer = !!currentPlayer?.host;
+	const isHost = isHostPlayer && isSpotifyConnected();
 	const spotifyPlayer = useSpotifyPlayer({ enabled: isHost });
 
 	useEffect(() => {
@@ -112,88 +119,84 @@ export default function Game() {
 	}, [currentPlayer?.host, spotifyPlayer]);
 
 	const currentTrackId = musicQueue[currentTrackIndex]?.id;
-	const playbackRef = useRef<{
-		prevStatus?: GameStateEnum;
-		lastPlayedTrackId?: string;
+	const gameStatus = gameState?.status;
+
+	// What this device has already been told to do, so an identical intent
+	// issues no command. Not a model of the game: the intent itself comes from
+	// the lobby row on every render (see `resolvePlaybackIntent`), this only
+	// dedupes the commands.
+	const appliedRef = useRef<{
+		kind?: PlaybackIntent["kind"];
+		trackId?: string;
+		/** Held back so reporting an error — which re-renders — can't spin into a retry loop. */
 		failedTrackId?: string;
 	}>({});
 
-	const gameStatus = gameState?.status;
+	const wasHostForPlaybackRef = useRef(isHost);
+
 	useEffect(() => {
-		if (!isHost || !spotifyPlayer.isReady || !gameStatus) return;
+		// A player who was never host has issued nothing on their device — this
+		// effect early-returns while `!isHost`, so `appliedRef` stayed empty.
+		// Clearing it on promotion makes that explicit rather than accidental,
+		// and is what stops a fresh host from acting on beliefs it never formed.
+		const wasHost = wasHostForPlaybackRef.current;
+		wasHostForPlaybackRef.current = isHost;
+		if (isHost && !wasHost) appliedRef.current = {};
 
-		const {
-			prevStatus: previousStatus,
-			lastPlayedTrackId,
-			failedTrackId,
-		} = playbackRef.current;
-		const status = gameStatus;
+		if (!isHost || !spotifyPlayer.isReady || !gameState) return;
 
-		// A failed track is only held back for as long as the round keeps
-		// running: any status change hands the host a fresh attempt at it.
-		if (status !== GameStatus.Playing) {
-			playbackRef.current.failedTrackId = undefined;
+		// Read the clock at command time, not render time: the position the
+		// track should start at is "now", not whenever React last rendered.
+		const intent = resolvePlaybackIntent(gameState, currentTrackId);
+		const applied = appliedRef.current;
+
+		// A failed track is only held back while the round keeps running: any
+		// other intent hands the host a fresh attempt at it.
+		if (intent.kind !== "play") applied.failedTrackId = undefined;
+
+		if (intent.kind === "idle") return;
+
+		if (intent.kind === "pause") {
+			if (applied.kind === "pause") return;
+			appliedRef.current = { kind: "pause" };
+			spotifyPlayer.pause();
+			return;
 		}
 
-		if (
-			status === GameStatus.Playing &&
-			currentTrackId &&
-			currentTrackId !== lastPlayedTrackId &&
-			currentTrackId !== failedTrackId
-		) {
-			playbackRef.current.lastPlayedTrackId = currentTrackId;
-			spotifyPlayer.play(currentTrackId).then((started) => {
+		// Already playing this exact track on this device — re-rendering (a
+		// volume change, an error toast, another player answering) must not
+		// restart it from the round's current position.
+		if (applied.kind === "play" && applied.trackId === intent.trackId) return;
+		if (applied.failedTrackId === intent.trackId) return;
+
+		appliedRef.current = { kind: "play", trackId: intent.trackId };
+		spotifyPlayer
+			.resume(intent.trackId, intent.positionMs)
+			.then((started) => {
 				if (started) return;
-				// Nothing got loaded on the device, so a later `resume` would
-				// have nothing to resume — another "Restriction violated". Drop
-				// the track from "already played" so the next status change
-				// starts it over, and remember the failure so reporting the
-				// error (which re-renders, and re-runs this effect) can't spin
-				// into a retry loop.
-				playbackRef.current.lastPlayedTrackId = undefined;
-				playbackRef.current.failedTrackId = currentTrackId;
+
+				// A newer intent already took over (this one was superseded, or
+				// the round moved on while it was in flight) — its own result
+				// governs, so don't overwrite it.
+				const applied = appliedRef.current;
+				if (applied.kind !== "play" || applied.trackId !== intent.trackId) {
+					return;
+				}
+
+				// Nothing got loaded, so remember the failure: reporting the
+				// error re-renders, which re-runs this effect, and without this
+				// it would spin into a retry loop.
+				appliedRef.current = { kind: undefined, failedTrackId: intent.trackId };
 			});
-		} else if (
-			status === GameStatus.Playing &&
-			previousStatus === GameStatus.Paused
-		) {
-			spotifyPlayer.resume();
-		} else if (
-			status === GameStatus.Paused &&
-			previousStatus !== GameStatus.Paused
-		) {
-			spotifyPlayer.pause();
-		} else if (
-			status === GameStatus.Waiting &&
-			previousStatus !== GameStatus.Waiting
-		) {
-			spotifyPlayer.pause();
-			playbackRef.current.lastPlayedTrackId = undefined;
-		}
+	}, [isHost, spotifyPlayer, gameState, currentTrackId]);
 
-		playbackRef.current.prevStatus = status;
-	}, [isHost, spotifyPlayer, gameStatus, currentTrackId]);
-
-	// Read from inside the interval callback, which outlives the render that
-	// created it. Kept fresh here rather than in the timer's dependencies so a
-	// player joining mid-round doesn't restart the countdown.
-	const roundEndRef = useRef<{
-		isHost: boolean;
-		track?: musicItemsProps;
-	}>({ isHost: false });
+	// Kept in a ref so `finalizeRound` can stay identity-stable: it is a
+	// dependency of the effects that end the round, and a new identity on every
+	// queue update would re-run them.
+	const roundTrackRef = useRef<musicItemsProps | undefined>(undefined);
 	useEffect(() => {
-		roundEndRef.current = {
-			isHost: !!currentPlayer?.host,
-			track: musicQueue[currentTrackIndex],
-		};
-	}, [currentPlayer?.host, musicQueue, currentTrackIndex]);
-
-	// Same reason: advancing the queue changes this callback's identity, and
-	// that must not tear down the running countdown.
-	const incrementTrackRef = useRef(incrementCurrentTrackIndex);
-	useEffect(() => {
-		incrementTrackRef.current = incrementCurrentTrackIndex;
-	}, [incrementCurrentTrackIndex]);
+		roundTrackRef.current = musicQueue[currentTrackIndex];
+	}, [musicQueue, currentTrackIndex]);
 
 	// Whether this client already submitted the current round's scores, so the
 	// host can't pay the same answers out twice. Deliberately a flag cleared at
@@ -204,14 +207,12 @@ export default function Game() {
 
 	// Both round-enders — the countdown hitting 0 and everyone having answered
 	// — go through here, so the flag above still keeps the payout to one per
-	// round whichever of them fires first. Identity is stable and the track
-	// comes from a ref, because the interval callback below outlives the
-	// render that created it.
+	// round whichever of them fires first.
 	const finalizeRound = useCallback((lobbyCode: string) => {
 		if (roundFinalizedRef.current) return;
 		roundFinalizedRef.current = true;
 
-		finishRound(lobbyCode, roundEndRef.current.track).catch((error) => {
+		finishRound(lobbyCode, roundTrackRef.current).catch((error) => {
 			console.error(error);
 			// Let a retry through, and make sure the round still ends even if
 			// scoring failed.
@@ -220,41 +221,43 @@ export default function Game() {
 		});
 	}, []);
 
-	const roundDuration = gameState?.duration;
+	// The countdown is *derived* from the round clock in the lobby row rather
+	// than decremented locally, so every client shows the same second, a
+	// mid-round refresh lands where the round actually is, and a settings write
+	// can no longer restart the timer (and re-arm a second payout) mid-round.
+	// This only paces the re-renders that recompute it.
+	useEffect(() => {
+		if (!isPlaying) return;
+		const intervalId = setInterval(() => setNow(Date.now()), 250);
+		return () => clearInterval(intervalId);
+	}, [isPlaying]);
+
+	const counter = remainingSeconds(gameState, now);
+
+	// Re-arm the payout when a *new* round starts. Resuming from a pause is not
+	// a new round, hence the previous-status check. Still a boolean rather than
+	// a remembered round number: `updateGameSettings` ("relancer la partie")
+	// puts `round` back to 0, which a remembered number would match forever.
 	useEffect(() => {
 		const previousStatus = prevStatus.current;
 		prevStatus.current = gameStatus;
 
-		if (gameStatus !== GameStatus.Playing || !code) return;
+		if (gameStatus !== GameStatus.Playing) return;
+		if (previousStatus === GameStatus.Paused) return;
 
-		// A pause only freezes the countdown, so resuming picks the remaining
-		// seconds back up. Anything else is a fresh round.
-		if (previousStatus !== GameStatus.Paused) {
-			setCounter(roundDuration ?? 30);
-			roundFinalizedRef.current = false;
-		}
+		roundFinalizedRef.current = false;
+	}, [gameStatus]);
 
-		if (previousStatus === GameStatus.Finished) incrementTrackRef.current();
+	// Every client watches the clock, but only the host ends the round: scoring
+	// reads and rewrites the whole players array, so letting each browser do it
+	// would race the others into clobbering scores. The rest just sit at 0 and
+	// wait for the realtime update.
+	useEffect(() => {
+		if (!code || !isPlaying || !isHostPlayer) return;
+		if (counter > 0) return;
 
-		const intervalId = setInterval(() => {
-			setCounter((c) => {
-				if (c <= 1) {
-					clearInterval(intervalId);
-
-					// Every client runs this timer, but only the host ends the
-					// round: scoring reads and rewrites the whole players array,
-					// so letting each browser do it would race the others into
-					// clobbering scores. The rest just stop at 0 and wait for the
-					// realtime update.
-					if (roundEndRef.current.isHost) finalizeRound(code);
-					return 0;
-				}
-				return c - 1;
-			});
-		}, 1000);
-
-		return () => clearInterval(intervalId);
-	}, [gameStatus, roundDuration, code, finalizeRound]);
+		finalizeRound(code);
+	}, [code, isPlaying, isHostPlayer, counter, finalizeRound]);
 
 	// Pops on the host's screen each time one more player has answered. The
 	// single element is reused: the sound is short and this is the app's only
@@ -262,7 +265,6 @@ export default function Game() {
 	const popRef = useRef<HTMLAudioElement | null>(null);
 	const answeredCountRef = useRef<number | null>(null);
 
-	const isHostPlayer = !!currentPlayer?.host;
 	const answeredCount = lobby?.player.filter((p) => !!p.answer).length ?? 0;
 	useEffect(() => {
 		const previousCount = answeredCountRef.current;

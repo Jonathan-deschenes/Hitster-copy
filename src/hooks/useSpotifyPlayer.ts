@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { getHostAccessToken } from "../lib/spotify/auth";
 import {
+	isPlaybackAborted,
 	pausePlaybackOnDevice,
 	playTrackOnDevice,
-	resumePlaybackOnDevice,
 } from "../lib/spotify/player";
 import {
 	ensureSpotifyPlayer,
@@ -49,6 +49,9 @@ export function useSpotifyPlayer({ enabled }: UseSpotifyPlayerOptions) {
 				await playTrackOnDevice(deviceId, trackId, await getHostAccessToken(), positionMs);
 				return true;
 			} catch (err) {
+				// Superseded by a newer command for this device — the one that
+				// replaced it reports its own outcome, so stay quiet.
+				if (isPlaybackAborted(err)) return false;
 				reportSpotifyPlayerError((err as Error).message);
 				return false;
 			}
@@ -74,18 +77,35 @@ export function useSpotifyPlayer({ enabled }: UseSpotifyPlayerOptions) {
 		}
 	}, [deviceId]);
 
-	const resume = useCallback(async () => {
-		if (!deviceId) {
-			reportSpotifyPlayerError(NOT_READY_MESSAGE);
-			return;
-		}
-		try {
-			if (await resumeLocalPlayback()) return;
-			await resumePlaybackOnDevice(deviceId, await getHostAccessToken());
-		} catch (err) {
-			reportSpotifyPlayerError((err as Error).message);
-		}
-	}, [deviceId]);
+	/**
+	 * Picks the round's track back up at `positionMs`, whichever state this
+	 * device is in. Resolves to whether audio is actually running.
+	 *
+	 * The track and position are required because "resume" is only meaningful
+	 * when *this* device already holds the playback context. A host promoted
+	 * mid-game never had one, and asking Spotify to resume nothing is a
+	 * guaranteed `403 Restriction violated` — so that case starts the track
+	 * instead, at the position the round has actually reached.
+	 */
+	const resume = useCallback(
+		async (trackId: string, positionMs = 0): Promise<boolean> => {
+			if (!deviceId) {
+				reportSpotifyPlayerError(NOT_READY_MESSAGE);
+				return false;
+			}
+			try {
+				// Preferred when it applies: keeps the exact position and costs
+				// no Web API call. Only true when this device already holds this
+				// track, so a new track always falls through to `play`.
+				if (await resumeLocalPlayback(trackId)) return true;
+			} catch (err) {
+				reportSpotifyPlayerError((err as Error).message);
+				return false;
+			}
+			return play(trackId, positionMs);
+		},
+		[deviceId, play],
+	);
 
 	return useMemo(
 		() => ({

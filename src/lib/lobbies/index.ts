@@ -7,15 +7,13 @@ export {
 export { createLobby, joinLobby, leaveLobby, deleteLobby } from "./lobbyMutations";
 export {
 	finishRound,
+	pauseRound,
+	resumeRound,
+	startRound,
 	updateGameStatus,
 	updateTurn,
-	updateRound,
 } from "./gameStateMutations";
-export {
-	getMusicQueue,
-	removeMusicFromQueue,
-	setCurrentTrackIndex,
-} from "./musicQueueMutations";
+export { getMusicQueue, removeMusicFromQueue } from "./musicQueueMutations";
 export {
 	subscribeToPublicLobbies,
 	subscribeToLobbyByCode,

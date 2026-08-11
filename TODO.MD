@@ -10,7 +10,7 @@
 
 [X] Recommencer la partie  
 [X] Choisir mode de jeu (musique, artiste, année, décennie, album)  
-[ ] Implémenter mode de jeu aléatoire
+[X] Implémenter mode de jeu aléatoire
 [X] Choisir nombre de round  
 [X] Changer la playlist  
 [X] Modifier la visibilité du lobby (privé, publique)  
@@ -18,14 +18,14 @@
 
 ## Jouabilité de la partie
 
-[ ] Implémenter mode de jeu deviner titre ou provenance jeux ou film  
-[ ] Implémenter mode de jeu deviner artiste  
-[ ] Implémenter mode de jeu deviner année (+/- 5 années proche)  
-[ ] Implémenter mode de jeu deviner décennie  
-[ ] Implémenter mode de jeu deviner album (x2 points)
+[X] Implémenter mode de jeu deviner titre ou provenance jeux ou film  
+[X] Implémenter mode de jeu deviner artiste  
+[X] Implémenter mode de jeu deviner année (+/- 5 années proche)  
+[X] Implémenter mode de jeu deviner décennie  
+[X] Implémenter mode de jeu deviner album (x2 points)
 
-[ ] Implémenter prise réponse des joueurs  
-[ ] Systeme de pointage  
+[X] Implémenter prise réponse des joueurs  
+[X] Systeme de pointage  
 [ ] Classement final a la fin d'une partie
 
 ## Connexion Spotify

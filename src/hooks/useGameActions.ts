@@ -5,22 +5,15 @@ import type { GameStateEnum, lobbyProps, playerProps } from "../types";
 import {
 	deleteLobby,
 	leaveLobby,
+	pauseRound,
+	resumeRound,
+	startRound,
 	subscribeToLobbyPresence,
-	updateGameStatus,
-	updateRound,
 } from "../lib/lobbies";
 import { promotePlayer } from "../lib/lobbies/lobbyMutations";
-import {
-	pickRandomOtherPlayer,
-	pickSuccessorPlayer,
-	resolveGameQuestion,
-} from "../util";
+import { pickRandomOtherPlayer, pickSuccessorPlayer } from "../util";
 import { useSpotifyPlayer } from "./useSpotifyPlayer";
-import {
-	resetPlayerAnswer,
-	updateGameQuestion,
-	updatePlayerAnswer,
-} from "../lib/lobbies/gameStateMutations";
+import { updatePlayerAnswer } from "../lib/lobbies/gameStateMutations";
 
 interface UseGameActionsParams {
 	code?: string;
@@ -51,7 +44,6 @@ export function useGameActions({
 
 	const currentPlayer = lobby?.player.find((p) => p.id === currentPlayerId);
 	const players = lobby?.player;
-	const gameState = lobby?.game_state;
 
 	// Deliberately not scoped to `currentPlayer?.host`: any Spotify-connected
 	// player pre-warming a device while they're just a regular player is what
@@ -131,30 +123,27 @@ export function useGameActions({
 			await promotePlayer(code, playerId);
 	}
 
+	// Starting the first round and starting every later one are the same
+	// operation, and both are a single atomic write: answers, question, round,
+	// status, clock and track index land together. See `startRound`.
 	async function handleStartGame() {
 		if (!code) return;
-		await updateGameStatus(code, GameStatus.Playing);
+		await startRound(code);
+	}
+
+	async function handleNewRound() {
+		if (!code) return;
+		await startRound(code);
 	}
 
 	async function handlePauseGame() {
 		if (!code) return;
-		await updateGameStatus(code, GameStatus.Paused);
+		await pauseRound(code);
 	}
 
 	async function handleResumeGame() {
 		if (!code) return;
-		await updateGameStatus(code, GameStatus.Playing);
-	}
-
-	async function handleNewRound() {
-		if (!code || !gameState) return;
-
-		const { question, questionMode } = resolveGameQuestion(gameState.mode);
-
-		await resetPlayerAnswer(code);
-		await updateGameQuestion(code, question, questionMode);
-		await updateRound(code, gameState.round + 1);
-		await updateGameStatus(code, GameStatus.Playing);
+		await resumeRound(code);
 	}
 
 	const hostActionByStatus: Record<GameStateEnum, () => void> = {

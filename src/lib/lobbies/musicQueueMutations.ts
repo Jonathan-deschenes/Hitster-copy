@@ -35,18 +35,6 @@ export async function removeMusicFromQueue(
 	return updateMusicQueue(code, { items, current });
 }
 
-export async function setCurrentTrackIndex(
-	code: string,
-	current: number,
-): Promise<lobbyProps> {
-	const row = await findLobbyRowByCode(code);
-	if (!row) {
-		throw new Error(`Aucun lobby trouvé avec le code ${code}.`);
-	}
-
-	return updateMusicQueue(code, { ...row.music_queue, current });
-}
-
 async function updateMusicQueue(
 	code: string,
 	music_queue: playlistQueueProps,

@@ -8,6 +8,7 @@ import type {
 	lobbyRowProps,
 	lobbySettingsFormProps,
 	musicItemsProps,
+	playerProps,
 	playlistQueueProps,
 } from "../../types";
 import { rowToLobby } from "./mappers";
@@ -16,6 +17,7 @@ import { fetchPlaylistTracks } from "../spotify/playlist";
 import { shuffle } from "lodash";
 import { resolveGameQuestion } from "../../util";
 import { scoreRound } from "../scoring";
+import { elapsedMs } from "../playback";
 
 const UNIQUE_VIOLATION = "23505";
 
@@ -57,19 +59,119 @@ export async function updateTurn(
 	return updateGameState(code, { turn });
 }
 
-export async function updateRound(
-	code: string,
-	round: number,
-): Promise<lobbyProps> {
-	return updateGameState(code, { round });
+// There are deliberately no `updateRound` / `updateGameQuestion` /
+// `resetPlayerAnswer` helpers. Round, question and cleared answers only ever
+// change together, at the start of a round, and issuing them as separate
+// writes is what let clients observe a half-started round — see `startRound`,
+// which does all of it in one update.
+
+/** Wipes last round's answers and verdicts. */
+function withClearedAnswers(players: playerProps[]): playerProps[] {
+	return players.map((player) => ({
+		...player,
+		answer: "",
+		roundPoints: 0,
+		roundCorrect: false,
+	}));
 }
 
-export async function updateGameQuestion(
-	code: string,
-	question: string,
-	questionMode: GameModeEnum,
-): Promise<lobbyProps> {
-	return updateGameState(code, { question, questionMode });
+/**
+ * Begins a round — both the first one (`waiting` → `playing`) and every
+ * subsequent one (`finished` → `playing`).
+ *
+ * Everything a round needs goes out in **one** update: cleared answers, the
+ * new question, the round counter, the status, the round clock and the track
+ * pointer. That matters for two reasons:
+ *
+ * 1. The track index is *derived* from `round`, never incremented. The old
+ *    code advanced it from `pages/Game.tsx` on every client, so N browsers
+ *    each ran a read-modify-write on `music_queue` from their own snapshot of
+ *    `current` — one of them writing a stale value skipped a track (or rewound
+ *    the queue) for everyone, and the drift was permanent because the queue
+ *    holds exactly `totalRounds` items.
+ * 2. Clients never observe an intermediate state. This used to be four
+ *    sequential writes, so `status: playing` arrived before the new track and
+ *    the countdown started a full round-trip ahead of the audio.
+ */
+export async function startRound(code: string): Promise<lobbyProps | null> {
+	const row = await findLobbyRowByCode(code);
+	if (!row) return null;
+
+	const gameState = row.game_state;
+
+	// Same shape as `finishRound`'s guard below: a double-fired handler can't
+	// advance the round twice.
+	if (gameState.status === GameStatus.Playing) return rowToLobby(row);
+
+	// Only a finished round draws the next question; starting the very first
+	// one keeps whatever `createLobby`/`updateGameSettings` already picked.
+	const advancing = gameState.status === GameStatus.Finished;
+	const round = advancing ? gameState.round + 1 : gameState.round;
+	const { question, questionMode } = advancing
+		? resolveGameQuestion(gameState.mode)
+		: { question: gameState.question, questionMode: gameState.questionMode };
+
+	// `createLobby` starts at round 0 with `current` 0, and starting the game
+	// doesn't touch `round`, so `current === round` is the invariant. Recomputing
+	// it means the pointer cannot drift no matter how often this runs.
+	const items = row.music_queue?.items ?? [];
+	const current = Math.min(round, Math.max(items.length - 1, 0));
+
+	const { data, error } = await supabase
+		.from("lobbies")
+		.update({
+			players: withClearedAnswers(row.players),
+			game_state: {
+				...gameState,
+				question,
+				questionMode,
+				round,
+				status: GameStatus.Playing,
+				roundStartedAt: Date.now(),
+				pausedElapsedMs: undefined,
+			},
+			music_queue: { ...row.music_queue, items, current },
+		})
+		.eq("code", code)
+		.select()
+		.single();
+
+	if (error) throw error;
+	return rowToLobby(data as lobbyRowProps);
+}
+
+/**
+ * Freezes the round clock alongside the status, so the elapsed time a later
+ * resume restores doesn't include however long the game sat paused.
+ */
+export async function pauseRound(code: string): Promise<lobbyProps | null> {
+	const row = await findLobbyRowByCode(code);
+	if (!row) return null;
+
+	if (row.game_state.status !== GameStatus.Playing) return rowToLobby(row);
+
+	return updateGameState(code, {
+		status: GameStatus.Paused,
+		pausedElapsedMs: elapsedMs(row.game_state),
+	});
+}
+
+/**
+ * Rewinds `roundStartedAt` by the elapsed time instead of storing a separate
+ * offset, so `now - roundStartedAt` stays the single expression every client
+ * uses to find both the countdown and the track position.
+ */
+export async function resumeRound(code: string): Promise<lobbyProps | null> {
+	const row = await findLobbyRowByCode(code);
+	if (!row) return null;
+
+	if (row.game_state.status !== GameStatus.Paused) return rowToLobby(row);
+
+	return updateGameState(code, {
+		status: GameStatus.Playing,
+		roundStartedAt: Date.now() - elapsedMs(row.game_state),
+		pausedElapsedMs: undefined,
+	});
 }
 
 /**
@@ -148,30 +250,6 @@ export async function updatePlayerAnswer(
 	return rowToLobby(data as lobbyRowProps);
 }
 
-export async function resetPlayerAnswer(code: string) {
-	const row = await findLobbyRowByCode(code);
-	if (!row) return null;
-
-	// Last round's verdict goes too, so the next reveal can't briefly show
-	// stale points against a fresh (empty) answer.
-	const players = row.players.map((player) => ({
-		...player,
-		answer: "",
-		roundPoints: 0,
-		roundCorrect: false,
-	}));
-
-	const { data, error } = await supabase
-		.from("lobbies")
-		.update({ players })
-		.eq("code", code)
-		.select()
-		.single();
-
-	if (error) throw error;
-	return rowToLobby(data as lobbyRowProps);
-}
-
 export async function updateGameSettings(
 	code: string,
 	updatedSettings: lobbySettingsFormProps,
@@ -195,6 +273,10 @@ export async function updateGameSettings(
 				questionMode,
 				totalRounds: updatedSettings.rounds,
 				duration: updatedSettings.duration,
+				// A restart has no round in flight, so the clock has to go too:
+				// a leftover timestamp would make the lobby look mid-round.
+				roundStartedAt: undefined,
+				pausedElapsedMs: undefined,
 			},
 			// This doubles as the "relancer la partie" path, so the standings
 			// have to go back to zero along with the round counter.
