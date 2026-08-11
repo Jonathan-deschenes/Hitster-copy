@@ -2,15 +2,11 @@ import { useState } from "react";
 import { IconMusic } from "../icons/GameIcons";
 import { GameMode, GameStatus } from "../../types";
 import type { gameStateProps, musicItemsProps } from "../../types";
+import { parseReleaseYear } from "../../lib/scoring";
 
 interface AlbumArtPanelProps {
 	currentTrack?: musicItemsProps;
 	gameState?: gameStateProps;
-}
-
-function releaseYear(releaseDate: string) {
-	const year = new Date(releaseDate).getFullYear();
-	return Number.isNaN(year) ? null : year;
 }
 
 export default function AlbumArtPanel({
@@ -24,7 +20,10 @@ export default function AlbumArtPanel({
 
 	// A finished round always shows the answer, even without a manual reveal.
 	const revealed = reveal || gameState?.status === GameStatus.Finished;
-	const year = currentTrack ? releaseYear(currentTrack.releaseDate) : null;
+	const year = parseReleaseYear(currentTrack?.releaseDate);
+	// The round's resolved target, so an "Aléatoire" game reveals whatever it
+	// actually asked about rather than always falling through to the title.
+	const revealMode = gameState?.questionMode ?? gameState?.mode;
 	const isPlaying = gameState?.status === GameStatus.Playing;
 
 	return (
@@ -68,13 +67,13 @@ export default function AlbumArtPanel({
 					)}
 					<h2 className='truncate font-display text-xl font-semibold text-white'>
 						{revealed
-							? gameState?.mode === GameMode.Titre
+							? revealMode === GameMode.Titre
 								? (currentTrack?.album ?? "Album indisponible")
 								: (currentTrack?.name ?? "Titre indisponible")
 							: "Titre caché"}
 					</h2>
 					<p className='truncate text-sm text-lavender/68'>
-						{revealed && gameState?.mode !== GameMode.Titre
+						{revealed && revealMode !== GameMode.Titre
 							? (currentTrack?.artist.join(", ") ?? "")
 							: "Devine avant de révéler !"}
 					</p>

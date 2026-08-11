@@ -8,7 +8,9 @@ import {
 import {
 	ensureSpotifyPlayer,
 	getSpotifyPlayerSnapshot,
+	pauseLocalPlayback,
 	reportSpotifyPlayerError,
+	resumeLocalPlayback,
 	setSpotifyPlayerVolume,
 	subscribeSpotifyPlayer,
 } from "../lib/spotify/playerStore";
@@ -36,16 +38,19 @@ export function useSpotifyPlayer({ enabled }: UseSpotifyPlayerOptions) {
 		if (enabled) ensureSpotifyPlayer();
 	}, [enabled]);
 
+	/** Resolves to whether the track actually started. */
 	const play = useCallback(
-		async (trackId: string, positionMs = 0) => {
+		async (trackId: string, positionMs = 0): Promise<boolean> => {
 			if (!deviceId) {
 				reportSpotifyPlayerError(NOT_READY_MESSAGE);
-				return;
+				return false;
 			}
 			try {
 				await playTrackOnDevice(deviceId, trackId, await getHostAccessToken(), positionMs);
+				return true;
 			} catch (err) {
 				reportSpotifyPlayerError((err as Error).message);
+				return false;
 			}
 		},
 		[deviceId],
@@ -57,7 +62,13 @@ export function useSpotifyPlayer({ enabled }: UseSpotifyPlayerOptions) {
 			return;
 		}
 		try {
-			await pausePlaybackOnDevice(deviceId, await getHostAccessToken());
+			if (await pauseLocalPlayback()) return;
+			// No local state: Spotify doesn't consider us the playing device.
+			// Ask the API anyway in case the SDK simply lost track of it, but
+			// there is nothing to interrupt, so a rejection isn't worth a toast.
+			await pausePlaybackOnDevice(deviceId, await getHostAccessToken()).catch(
+				(err) => console.warn(err),
+			);
 		} catch (err) {
 			reportSpotifyPlayerError((err as Error).message);
 		}
@@ -69,6 +80,7 @@ export function useSpotifyPlayer({ enabled }: UseSpotifyPlayerOptions) {
 			return;
 		}
 		try {
+			if (await resumeLocalPlayback()) return;
 			await resumePlaybackOnDevice(deviceId, await getHostAccessToken());
 		} catch (err) {
 			reportSpotifyPlayerError((err as Error).message);

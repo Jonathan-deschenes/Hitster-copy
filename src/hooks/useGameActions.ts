@@ -1,12 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { GameStatus } from "../types";
-import type {
-	GameStateEnum,
-	lobbyProps,
-	musicItemsProps,
-	playerProps,
-} from "../types";
+import type { GameStateEnum, lobbyProps, playerProps } from "../types";
 import {
 	deleteLobby,
 	leaveLobby,
@@ -154,10 +149,10 @@ export function useGameActions({
 	async function handleNewRound() {
 		if (!code || !gameState) return;
 
-		const question = resolveGameQuestion(gameState.mode);
+		const { question, questionMode } = resolveGameQuestion(gameState.mode);
 
 		await resetPlayerAnswer(code);
-		await updateGameQuestion(code, question);
+		await updateGameQuestion(code, question, questionMode);
 		await updateRound(code, gameState.round + 1);
 		await updateGameStatus(code, GameStatus.Playing);
 	}

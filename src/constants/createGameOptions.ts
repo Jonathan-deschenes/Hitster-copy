@@ -39,6 +39,6 @@ export const gameModeQuestions: Partial<Record<GameModeEnum, string>> = {
 };
 
 export const DURATION_MIN = 10;
-export const DURATION_MAX = 60;
-export const DURATION_STEP = 5;
+export const DURATION_MAX = 120;
+export const DURATION_STEP = 10;
 export const DURATION_DEFAULT = 30;

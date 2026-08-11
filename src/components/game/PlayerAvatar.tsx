@@ -1,4 +1,4 @@
-import { IconCrown, IconUser } from "../icons/PlayerIcons";
+import { IconCheck, IconCrown, IconUser } from "../icons/PlayerIcons";
 import { RANK_STYLES } from "./rankStyles";
 
 // Picked by index rather than by id so a player keeps the same colour
@@ -34,6 +34,8 @@ interface PlayerAvatarProps {
 	host?: boolean;
 	/** Adds the medal badge for ranks 1 to 3; ignored otherwise. */
 	rank?: number;
+	/** Adds the check badge once the player submitted an answer this round. */
+	hasAnswered?: boolean;
 	className?: string;
 }
 
@@ -44,6 +46,7 @@ export default function PlayerAvatar({
 	isYou = false,
 	host = false,
 	rank,
+	hasAnswered = false,
 	className = "",
 }: PlayerAvatarProps) {
 	const rankStyle = rank ? RANK_STYLES[rank] : undefined;
@@ -63,6 +66,14 @@ export default function PlayerAvatar({
 				{host && (
 					<span className='absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border border-lavender/14 bg-bg-deep text-accent-blue'>
 						<IconCrown />
+					</span>
+				)}
+				{hasAnswered && (
+					<span
+						className='absolute -top-1 -left-1 flex h-5 w-5 items-center justify-center rounded-full border border-lavender/14 bg-bg-deep text-emerald-300'
+						title='A répondu'
+					>
+						<IconCheck />
 					</span>
 				)}
 				{rankStyle && (

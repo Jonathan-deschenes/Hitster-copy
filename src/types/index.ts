@@ -45,14 +45,14 @@ export const GameStatus = {
 } as const;
 
 export const GameMode = {
-	Aleatoire: "aleatoire",
+	Aleatoire: "random",
 	Musique: "musique",
 	Artiste: "artiste",
 	Annee: "annee",
 	Decennie: "decennie",
 	Album: "album",
 	Titre: "titre",
-};
+} as const;
 
 export type GameStateEnum = (typeof GameStatus)[keyof typeof GameStatus];
 
@@ -64,6 +64,13 @@ export type gameStateProps = {
 	turn: number;
 	round: number;
 	question: string;
+	/**
+	 * The mode the current round actually asks about. Identical to `mode`
+	 * except in `Aleatoire`, where it holds the mode drawn for this round —
+	 * without it the answer couldn't be scored, since only the question text
+	 * is persisted.
+	 */
+	questionMode: GameModeEnum;
 	totalRounds: number;
 	duration: number;
 };
@@ -74,6 +81,12 @@ export type playerProps = {
 	host: boolean;
 	score: number;
 	answer: string;
+	/** Points won in the round that just finished. Optional: lobbies created
+	 * before scoring existed have players without it. */
+	roundPoints?: number;
+	/** Whether that answer was judged correct, to tell "+0 for a wrong guess"
+	 * apart from "0 because this mode awards nothing". */
+	roundCorrect?: boolean;
 };
 
 /** Shape of a row in the Supabase `lobbies` table. */

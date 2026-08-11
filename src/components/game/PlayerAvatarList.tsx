@@ -18,7 +18,6 @@ export default function PlayerAvatarList({
 				const rank = index + 1;
 				const isYou = player.id === currentPlayerId;
 				const originalIndex = players.findIndex((p) => p.id === player.id);
-
 				return (
 					<li
 						key={player.id}
@@ -31,6 +30,7 @@ export default function PlayerAvatarList({
 							isYou={isYou}
 							host={player.host}
 							rank={rank}
+							hasAnswered={!!player.answer}
 						/>
 						<span className='text-[0.72rem] font-bold text-accent-blue'>
 							{player.score ?? 0} pts

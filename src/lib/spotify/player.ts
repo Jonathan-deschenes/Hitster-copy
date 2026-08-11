@@ -43,25 +43,47 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Keyed by `path:deviceId` so an overlapping call for the same command
+// Spotify Connect applies one command at a time per device, and a command that
+// arrives while the previous one is still settling comes back as
+// 403 "Restriction violated". Chaining every request for a device keeps them in
+// the order they were issued and — since a request can spend seconds in the
+// retry loop below — stops a stale command from landing after a newer one.
+const deviceQueues = new Map<string, Promise<unknown>>();
+
+function enqueue<T>(deviceId: string, task: () => Promise<T>): Promise<T> {
+	const previous = deviceQueues.get(deviceId) ?? Promise.resolve();
+	// Runs on both settle paths: one failed command must not strand the queue.
+	const run = previous.then(task, task);
+	deviceQueues.set(
+		deviceId,
+		run.catch(() => undefined),
+	);
+	return run;
+}
+
+// Keyed by `command:deviceId` so an overlapping call for the same command
 // (e.g. two effect runs triggered in quick succession by unrelated realtime
 // updates, or React StrictMode's dev-only double-invoke) reuses the request
 // already in flight instead of firing a second one and doubling any error.
+// The key is the command rather than the endpoint: "start this track" and
+// "resume" share the /play path but are different intents, and collapsing one
+// into the other silently drops it.
 const inFlightRequests = new Map<string, Promise<void>>();
 
 function callPlayerEndpoint(
+	command: string,
 	path: string,
 	deviceId: string,
 	accessToken: string,
 	body?: object,
 ): Promise<void> {
-	const key = `${path}:${deviceId}`;
+	const key = `${command}:${deviceId}`;
 	const existing = inFlightRequests.get(key);
 	if (existing) return existing;
 
-	const request = sendPlayerRequest(path, deviceId, accessToken, body).finally(
-		() => inFlightRequests.delete(key),
-	);
+	const request = enqueue(deviceId, () =>
+		sendPlayerRequest(path, deviceId, accessToken, body),
+	).finally(() => inFlightRequests.delete(key));
 	inFlightRequests.set(key, request);
 	return request;
 }
@@ -117,23 +139,29 @@ export function playTrackOnDevice(
 	accessToken: string,
 	positionMs = 0,
 ): Promise<void> {
-	return callPlayerEndpoint("play", deviceId, accessToken, {
+	// Per track: two different tracks are two different intents, and only a
+	// repeat of the same one is safe to collapse.
+	return callPlayerEndpoint(`play:${trackId}`, "play", deviceId, accessToken, {
 		uris: [`spotify:track:${trackId}`],
 		position_ms: positionMs,
 	});
 }
 
+/** Fallback for when the SDK has no local state — prefer `pauseLocalPlayback`. */
 export function pausePlaybackOnDevice(
 	deviceId: string,
 	accessToken: string,
 ): Promise<void> {
-	return callPlayerEndpoint("pause", deviceId, accessToken);
+	return callPlayerEndpoint("pause", "pause", deviceId, accessToken);
 }
 
-/** Resumes from the current paused position instead of restarting the track. */
+/**
+ * Resumes from the current paused position instead of restarting the track.
+ * Fallback for when the SDK has no local state — prefer `resumeLocalPlayback`.
+ */
 export function resumePlaybackOnDevice(
 	deviceId: string,
 	accessToken: string,
 ): Promise<void> {
-	return callPlayerEndpoint("play", deviceId, accessToken);
+	return callPlayerEndpoint("resume", "play", deviceId, accessToken);
 }

@@ -31,30 +31,41 @@ export function pickSuccessorPlayer(
 	return remaining[0] ?? null;
 }
 
-export function pickRandomRandomQuestion(
-	record: Partial<Record<GameModeEnum, string>>,
-): string | undefined {
-	const keyToRemove = [GameMode.Titre];
+/**
+ * Modes `Aleatoire` never draws: `Titre` only makes sense on soundtrack
+ * playlists, and `Album` isn't scored, so landing on either at random would
+ * hand players an unwinnable round.
+ */
+const RANDOM_MODE_EXCLUSIONS: GameModeEnum[] = [GameMode.Titre, GameMode.Album];
 
+export function pickRandomQuestionMode(
+	record: Partial<Record<GameModeEnum, string>>,
+): GameModeEnum | undefined {
 	const keys = (Object.keys(record) as GameModeEnum[]).filter(
-		(key) => !keyToRemove.includes(key),
+		(key) => !RANDOM_MODE_EXCLUSIONS.includes(key),
 	);
 	if (keys.length === 0) return;
 
-	const randomKey = keys[Math.floor(Math.random() * keys.length)];
-
-	return record[randomKey];
+	return keys[Math.floor(Math.random() * keys.length)];
 }
 
 /**
- * The question a round should display for a given mode: a random one when
- * the mode is "random", otherwise the mode's fixed question from
- * `gameModeQuestions` — falling back to `DEFAULT_QUESTION` if none is
- * defined for that mode.
+ * The question a round should display for a given mode, together with the
+ * mode that question is actually about. The two differ under `Aleatoire`,
+ * where the target is drawn per round — and the scorer needs that resolved
+ * mode, so both halves get persisted in `game_state`.
  */
-export function resolveGameQuestion(mode: string): string {
-	if (mode === "random") {
-		return pickRandomRandomQuestion(gameModeQuestions) ?? DEFAULT_QUESTION;
-	}
-	return gameModeQuestions[mode as GameModeEnum] ?? DEFAULT_QUESTION;
+export function resolveGameQuestion(mode: string): {
+	question: string;
+	questionMode: GameModeEnum;
+} {
+	const questionMode =
+		mode === GameMode.Aleatoire
+			? (pickRandomQuestionMode(gameModeQuestions) ?? GameMode.Musique)
+			: (mode as GameModeEnum);
+
+	return {
+		question: gameModeQuestions[questionMode] ?? DEFAULT_QUESTION,
+		questionMode,
+	};
 }

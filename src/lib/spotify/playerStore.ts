@@ -69,6 +69,30 @@ export function ensureSpotifyPlayer(): Promise<void> {
 	return connectPromise;
 }
 
+/**
+ * Pause/resume through the SDK's own transport controls, which act on what
+ * this device is really doing: pausing something already paused — or resuming
+ * something already playing — does nothing, where the Web API answers the same
+ * command with `403 Player command failed: Restriction violated`.
+ *
+ * Both return false when the SDK holds no state for this device (Spotify isn't
+ * playing through us), leaving the caller to decide whether the Web API is
+ * still worth a try.
+ */
+export async function pauseLocalPlayback(): Promise<boolean> {
+	const playbackState = await player?.getCurrentState();
+	if (!playbackState) return false;
+	if (!playbackState.paused) await player?.pause();
+	return true;
+}
+
+export async function resumeLocalPlayback(): Promise<boolean> {
+	const playbackState = await player?.getCurrentState();
+	if (!playbackState) return false;
+	if (playbackState.paused) await player?.resume();
+	return true;
+}
+
 export function reportSpotifyPlayerError(message: string) {
 	setState({ error: message });
 }

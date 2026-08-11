@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { PrimaryButton } from "../Button";
 import { IconChat, IconSend } from "../icons/GameIcons";
-import type { gameStateProps, playerProps } from "../../types";
+import type { gameStateProps, musicItemsProps, playerProps } from "../../types";
 import LobbyAnswerBox from "./LobbyAnswerBox";
 
 interface LobbyQuestionBoxProps {
@@ -11,6 +11,7 @@ interface LobbyQuestionBoxProps {
 	currentPlayer: string;
 	gameState: gameStateProps | undefined;
 	players: playerProps[];
+	currentTrack?: musicItemsProps;
 }
 
 export default function LobbyQuestionBox({
@@ -20,6 +21,7 @@ export default function LobbyQuestionBox({
 	currentPlayer,
 	gameState,
 	players,
+	currentTrack,
 }: LobbyQuestionBoxProps) {
 	const [answer, setAnswer] = useState("");
 	const [submitted, setSubmitted] = useState(false);
@@ -47,7 +49,7 @@ export default function LobbyQuestionBox({
 		setAnswer(e.target.value);
 	}
 
-	if (gameState.status === "playing") {
+	if (gameState.status === "playing" || gameState.status === "paused") {
 		return (
 			<div
 				className={`flex w-full max-w-md flex-col rounded-3xl border border-lavender/14 bg-lavender/5 p-5 backdrop-blur-lg ${className}`}
@@ -88,6 +90,14 @@ export default function LobbyQuestionBox({
 			</div>
 		);
 	} else if (gameState.status === "finished") {
-		return <LobbyAnswerBox players={players} />;
+		return (
+			<LobbyAnswerBox
+				className={className}
+				players={players}
+				currentTrack={currentTrack}
+				questionMode={gameState.questionMode ?? gameState.mode}
+				currentPlayerId={currentPlayer}
+			/>
+		);
 	}
 }

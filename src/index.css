@@ -1,90 +1,90 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg-deep: #08060d;
-  --color-purple: #7e14ff;
-  --color-purple-light: #863bff;
-  --color-purple-soft: #aa3bff;
-  --color-accent-blue: #47bfff;
-  --color-lavender: #ede6ff;
+	--color-bg-deep: #08060d;
+	--color-purple: #7e14ff;
+	--color-purple-light: #863bff;
+	--color-purple-soft: #aa3bff;
+	--color-accent-blue: #47bfff;
+	--color-lavender: #ede6ff;
 
-  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
-  --font-body: "Inter", system-ui, sans-serif;
+	--font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+	--font-body: "Inter", system-ui, sans-serif;
 
-  --animate-float: float 6s ease-in-out infinite;
-  --animate-drift-a: drift-a 18s ease-in-out infinite;
-  --animate-drift-b: drift-b 22s ease-in-out infinite;
-  --animate-drift-a-rev: drift-a 26s ease-in-out infinite reverse;
-  --animate-pulse-glow: pulse-glow 2.2s ease-in-out infinite;
+	--animate-float: float 6s ease-in-out infinite;
+	--animate-drift-a: drift-a 18s ease-in-out infinite;
+	--animate-drift-b: drift-b 22s ease-in-out infinite;
+	--animate-drift-a-rev: drift-a 26s ease-in-out infinite reverse;
+	--animate-pulse-glow: pulse-glow 2.2s ease-in-out infinite;
 }
 
 @keyframes pulse-glow {
-  0%,
-  100% {
-    box-shadow: 0 40px 80px -20px rgba(126, 20, 255, 0.5);
-  }
-  50% {
-    box-shadow: 0 40px 90px -14px rgba(71, 191, 255, 0.65);
-  }
+	0%,
+	100% {
+		box-shadow: 0 40px 80px -20px rgba(126, 20, 255, 0.5);
+	}
+	50% {
+		box-shadow: 0 40px 90px -14px rgba(71, 191, 255, 0.65);
+	}
 }
 
 @keyframes float {
-  0%,
-  100% {
-    transform: translateY(0) rotate(-2deg);
-  }
-  50% {
-    transform: translateY(-18px) rotate(2deg);
-  }
+	0%,
+	100% {
+		transform: translateY(0) rotate(-2deg);
+	}
+	50% {
+		transform: translateY(-18px) rotate(2deg);
+	}
 }
 
 @keyframes drift-a {
-  0%,
-  100% {
-    transform: translate(0, 0);
-  }
-  50% {
-    transform: translate(40px, 30px);
-  }
+	0%,
+	100% {
+		transform: translate(0, 0);
+	}
+	50% {
+		transform: translate(40px, 30px);
+	}
 }
 
 @keyframes drift-b {
-  0%,
-  100% {
-    transform: translate(0, 0);
-  }
-  50% {
-    transform: translate(-30px, -40px);
-  }
+	0%,
+	100% {
+		transform: translate(0, 0);
+	}
+	50% {
+		transform: translate(-30px, -40px);
+	}
 }
 
 html,
 body {
-  height: 100%;
+	height: 100%;
 }
 
 body {
-  font-family: var(--font-body);
-  background: var(--color-bg-deep);
-  color: #f7f4ff;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+	font-family: var(--font-body);
+	background: var(--color-bg-deep);
+	color: #f7f4ff;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
 }
 
 #root {
-  height: 100dvh;
-  overflow: hidden;
+	height: 100dvh;
+	overflow: hidden;
 }
 
 /* Toastify's built-in mobile breakpoint (360px) is narrower than most
    phones, so its `max-width: calc(50% - 20px)` keeps toasts cramped
    and wrapping badly. Widen them on real mobile viewports instead. */
 @media (max-width: 640px) {
-  .toastify.toastify-right,
-  .toastify.toastify-left {
-    left: 16px;
-    right: 16px;
-    max-width: none;
-    width: auto;
-  }
+	.toastify.toastify-right,
+	.toastify.toastify-left {
+		left: 16px;
+		right: 16px;
+		max-width: none;
+		width: auto;
+	}
 }

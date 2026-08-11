@@ -42,6 +42,20 @@ export function IconKick() {
 	);
 }
 
+export function IconCheck() {
+	return (
+		<svg width='12' height='12' viewBox='0 0 20 20' fill='none'>
+			<path
+				d='M4.5 10.5l3.5 3.5 7.5-8'
+				stroke='currentColor'
+				strokeWidth='2.2'
+				strokeLinecap='round'
+				strokeLinejoin='round'
+			/>
+		</svg>
+	);
+}
+
 export function IconCrown() {
 	return (
 		<svg width='12' height='12' viewBox='0 0 20 20' fill='none'>

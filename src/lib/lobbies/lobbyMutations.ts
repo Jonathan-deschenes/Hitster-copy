@@ -2,6 +2,7 @@ import { supabase } from "../supabaseClient";
 import { GameStatus } from "../../types";
 import type {
 	gameCategoryProps,
+	GameModeEnum,
 	lobbyProps,
 	lobbyRowProps,
 	playerProps,
@@ -33,6 +34,7 @@ export async function createLobby(
 	// existing lobby (the `code` column is unique).
 	for (let attempt = 0; attempt < 5; attempt++) {
 		const code = getRandomCode();
+		const { question, questionMode } = resolveGameQuestion(settings.mode);
 		const { data, error } = await supabase
 			.from("lobbies")
 			.insert({
@@ -42,11 +44,12 @@ export async function createLobby(
 				code,
 				category: settings.category,
 				game_state: {
-					mode: settings.mode,
+					mode: settings.mode as GameModeEnum,
 					status: "waiting",
 					turn: 0,
 					round: 0,
-					question: resolveGameQuestion(settings.mode),
+					question,
+					questionMode,
 					totalRounds: settings.rounds,
 					duration: settings.duration,
 				},

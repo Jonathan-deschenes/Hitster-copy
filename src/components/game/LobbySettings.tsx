@@ -49,7 +49,7 @@ export default function LobbySettings({
 	}, [filteredGameMode, setSettings, settings.mode]);
 
 	return (
-		<form className='flex flex-col gap-5 ' onSubmit={handleSubmit}>
+		<form className='flex flex-col gap-5' onSubmit={handleSubmit}>
 			<SelectField
 				id='lobby-settings-rounds'
 				label='Nombre de manches'

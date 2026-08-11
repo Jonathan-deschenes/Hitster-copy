@@ -1,10 +1,13 @@
 import { supabase } from "../supabaseClient";
+import { GameStatus } from "../../types";
 import type {
 	gameStateProps,
+	GameModeEnum,
 	GameStateEnum,
 	lobbyProps,
 	lobbyRowProps,
 	lobbySettingsFormProps,
+	musicItemsProps,
 	playlistQueueProps,
 } from "../../types";
 import { rowToLobby } from "./mappers";
@@ -12,6 +15,7 @@ import { findLobbyRowByCode } from "./queries";
 import { fetchPlaylistTracks } from "../spotify/playlist";
 import { shuffle } from "lodash";
 import { resolveGameQuestion } from "../../util";
+import { scoreRound } from "../scoring";
 
 const UNIQUE_VIOLATION = "23505";
 
@@ -63,8 +67,62 @@ export async function updateRound(
 export async function updateGameQuestion(
 	code: string,
 	question: string,
+	questionMode: GameModeEnum,
 ): Promise<lobbyProps> {
-	return updateGameState(code, { question });
+	return updateGameState(code, { question, questionMode });
+}
+
+/**
+ * Ends the round: grades every answer against the track and reveals it.
+ *
+ * Scores and `status` go out in a single update so the reveal never appears
+ * with last round's points still on screen. Only the host is expected to call
+ * this — see the timer in `pages/Game.tsx`.
+ */
+export async function finishRound(
+	code: string,
+	track: musicItemsProps | undefined,
+): Promise<lobbyProps | null> {
+	const row = await findLobbyRowByCode(code);
+	if (!row) return null;
+
+	// The caller's effect can fire more than once for one round; without this
+	// the same answers would be paid out twice.
+	if (row.game_state.status === GameStatus.Finished) {
+		return rowToLobby(row);
+	}
+
+	const results = scoreRound(
+		row.players,
+		track,
+		row.game_state.questionMode ?? row.game_state.mode,
+	);
+
+	const players = row.players.map((player) => {
+		const { points, correct } = results[player.id] ?? {
+			points: 0,
+			correct: false,
+		};
+		return {
+			...player,
+			score: (player.score ?? 0) + points,
+			roundPoints: points,
+			roundCorrect: correct,
+		};
+	});
+
+	const { data, error } = await supabase
+		.from("lobbies")
+		.update({
+			players,
+			game_state: { ...row.game_state, status: GameStatus.Finished },
+		})
+		.eq("code", code)
+		.select()
+		.single();
+
+	if (error) throw error;
+	return rowToLobby(data as lobbyRowProps);
 }
 
 export async function updatePlayerAnswer(
@@ -94,7 +152,14 @@ export async function resetPlayerAnswer(code: string) {
 	const row = await findLobbyRowByCode(code);
 	if (!row) return null;
 
-	const players = row.players.map((player) => ({ ...player, answer: "" }));
+	// Last round's verdict goes too, so the next reveal can't briefly show
+	// stale points against a fresh (empty) answer.
+	const players = row.players.map((player) => ({
+		...player,
+		answer: "",
+		roundPoints: 0,
+		roundCorrect: false,
+	}));
 
 	const { data, error } = await supabase
 		.from("lobbies")
@@ -114,6 +179,8 @@ export async function updateGameSettings(
 	const row = await findLobbyRowByCode(code);
 	if (!row) return null;
 
+	const { question, questionMode } = resolveGameQuestion(updatedSettings.mode);
+
 	const { data, error } = await supabase
 		.from("lobbies")
 		.update({
@@ -122,12 +189,22 @@ export async function updateGameSettings(
 			game_state: {
 				...row.game_state,
 				round: 0,
-				mode: updatedSettings.mode,
+				mode: updatedSettings.mode as GameModeEnum,
 				status: "waiting",
-				question: resolveGameQuestion(updatedSettings.mode),
+				question,
+				questionMode,
 				totalRounds: updatedSettings.rounds,
 				duration: updatedSettings.duration,
 			},
+			// This doubles as the "relancer la partie" path, so the standings
+			// have to go back to zero along with the round counter.
+			players: row.players.map((player) => ({
+				...player,
+				score: 0,
+				answer: "",
+				roundPoints: 0,
+				roundCorrect: false,
+			})),
 		})
 		.eq("code", code)
 		.select()
