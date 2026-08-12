@@ -1,5 +1,6 @@
 import { IconCheck, IconCrown, IconUser } from "../icons/PlayerIcons";
 import { RANK_STYLES } from "./rankStyles";
+import { playerDisplayName } from "../../util";
 
 // Picked by index rather than by id so a player keeps the same colour
 // wherever they're rendered. Callers should pass the player's position in
@@ -88,8 +89,7 @@ export default function PlayerAvatar({
 			<span
 				className={`truncate text-center text-[0.78rem] text-lavender/68 ${labelWidths[size]}`}
 			>
-				{pseudo || "Anonyme"}
-				{isYou && " (toi)"}
+				{playerDisplayName(pseudo, isYou)}
 			</span>
 		</span>
 	);

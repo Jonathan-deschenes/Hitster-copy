@@ -34,13 +34,9 @@ let player: Spotify.Player | null = null;
 const listeners = new Set<() => void>();
 
 /**
- * Skips the notify when nothing actually changed.
- *
- * `useSyncExternalStore` compares snapshots by identity, so allocating a new
- * object unconditionally re-rendered every consumer — and re-ran the playback
- * effect, which takes this store's value as a dependency. Reporting the *same*
- * error twice is the common case (the same failure re-reported on the retry),
- * and it used to churn the whole tree.
+ * Skips the notify when nothing changed. `useSyncExternalStore` compares
+ * snapshots by identity, so a new object every time re-rendered every consumer
+ * and re-ran the playback effect — and re-reporting the same error is common.
  */
 function setState(patch: Partial<PlayerStoreState>) {
 	const next = { ...state, ...patch };
@@ -56,11 +52,9 @@ function setState(patch: Partial<PlayerStoreState>) {
 
 /**
  * Lazily creates one Spotify Connect device for the lifetime of the browser
- * tab, shared across every host page that needs it. Recreating the SDK
- * player per lobby used to race Spotify's backend teardown of the previous
- * device (disconnect on unmount vs. connect on the next mount), which
- * surfaced as spurious 404 "Device not found" errors when hosting back to
- * back lobbies.
+ * tab, shared across every page. Recreating it per lobby raced Spotify's
+ * teardown of the previous device and surfaced as spurious 404 "Device not
+ * found" when hosting back-to-back lobbies.
  */
 export function ensureSpotifyPlayer(): Promise<void> {
 	if (!connectPromise) {
@@ -86,13 +80,10 @@ export function ensureSpotifyPlayer(): Promise<void> {
 }
 
 /**
- * Pause/resume through the SDK's own transport controls, which act on what
- * this device is really doing: pausing something already paused — or resuming
- * something already playing — does nothing, where the Web API answers the same
- * command with `403 Player command failed: Restriction violated`.
- *
- * Both return false when the SDK holds no state for this device (Spotify isn't
- * playing through us), leaving the caller to decide what to do instead.
+ * SDK transport controls act on what the device is really doing, so a no-op is
+ * harmless — the Web API equivalents answer with `403 Restriction violated`.
+ * Returns false when the SDK holds no state for this device, leaving the
+ * caller to decide what to do instead.
  */
 export async function pauseLocalPlayback(): Promise<boolean> {
 	const playbackState = await player?.getCurrentState();

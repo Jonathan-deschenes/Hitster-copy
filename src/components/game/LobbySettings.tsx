@@ -1,18 +1,13 @@
 import SelectField from "../SelectField";
 import ToggleField from "../ToggleField";
+import DurationSlider from "../DurationSlider";
 import { PrimaryButton } from "../Button";
 import { IconNextRound } from "../icons/GameIcons";
-import {
-	musicStyle,
-	roundsOptions,
-	gameModeOptions,
-	DURATION_MIN,
-	DURATION_MAX,
-	DURATION_STEP,
-} from "../../constants/createGameOptions";
+import { musicStyle, roundsOptions } from "../../constants/createGameOptions";
 import { useLobbySettingsForm } from "../../hooks/useLobbySettingsForm";
-import type { gameCategoryProps, lobbyProps } from "../../types";
-import { useEffect, type SetStateAction } from "react";
+import { filterGameModesForCategory } from "../../util";
+import type { lobbyProps } from "../../types";
+import { useEffect, useMemo, type SetStateAction } from "react";
 
 interface LobbySettingsProps {
 	lobby: lobbyProps;
@@ -31,14 +26,14 @@ export default function LobbySettings({
 		desktopMenuClose,
 	);
 
-	const gameCategory: string = settings.category.label;
-	const gameMode: gameCategoryProps[] = gameModeOptions;
+	// Memoized so the effect below doesn't re-run on every render.
+	const filteredGameMode = useMemo(
+		() => filterGameModesForCategory(settings.category.value),
+		[settings.category.value],
+	);
 
-	const filteredGameMode =
-		gameCategory === musicStyle[3].label || gameCategory === musicStyle[4].label
-			? gameMode.filter((g) => g.label === "Titre")
-			: gameMode.slice(0, -1);
-
+	// Switching playlist can invalidate the selected mode — fall back to the
+	// first one the new playlist actually offers.
 	useEffect(() => {
 		const stillValid = filteredGameMode.some(
 			(option) => option.value === settings.mode,
@@ -105,34 +100,11 @@ export default function LobbySettings({
 				}
 			/>
 
-			<div className='flex flex-col gap-2'>
-				<label
-					htmlFor='lobby-settings-duration'
-					className='text-[0.9rem] font-semibold'
-				>
-					Durée des extraits
-				</label>
-				<div className='flex items-center gap-3 rounded-2xl border border-lavender/14 bg-bg-deep/35 px-4 py-3.5'>
-					<input
-						id='lobby-settings-duration'
-						type='range'
-						min={DURATION_MIN}
-						max={DURATION_MAX}
-						step={DURATION_STEP}
-						value={settings.duration}
-						onChange={(e) =>
-							setSettings((prev) => ({
-								...prev,
-								duration: Number(e.target.value),
-							}))
-						}
-						className='w-full accent-accent-blue'
-					/>
-					<span className='w-10 shrink-0 text-right text-[0.9rem] text-lavender/68'>
-						{settings.duration}s
-					</span>
-				</div>
-			</div>
+			<DurationSlider
+				id='lobby-settings-duration'
+				value={settings.duration}
+				onChange={(duration) => setSettings((prev) => ({ ...prev, duration }))}
+			/>
 
 			<PrimaryButton type='submit' className='mt-1 w-full'>
 				<IconNextRound />

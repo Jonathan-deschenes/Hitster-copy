@@ -9,6 +9,16 @@ export const musicStyle: gameCategoryProps[] = [
 	{ value: "09cv5duYGfbvb9kh8Z0iGj", label: "Test" }, // remove in production
 ];
 
+/**
+ * Soundtrack playlists ("Jeux vidéo", "Films et émission"). The only sensible
+ * thing to guess is what the music is *from*, so these offer `Titre` alone.
+ * Keyed by playlist id — labels get reworded, ids don't.
+ */
+export const TITLE_ONLY_PLAYLISTS = new Set([
+	"4hS4xpg6lzOrKqA3kAbGdW",
+	"4OU4FTKX6U5rlPy7qNiaDg",
+]);
+
 export const roundsOptions = [
 	{ value: "10", label: "10 manches" },
 	{ value: "15", label: "15 manches" },
@@ -41,4 +51,3 @@ export const gameModeQuestions: Partial<Record<GameModeEnum, string>> = {
 export const DURATION_MIN = 10;
 export const DURATION_MAX = 120;
 export const DURATION_STEP = 10;
-export const DURATION_DEFAULT = 30;

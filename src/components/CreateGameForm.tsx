@@ -2,41 +2,34 @@ import TextField from "./TextField";
 import PasswordField from "./PasswordField";
 import SelectField from "./SelectField";
 import ToggleField from "./ToggleField";
+import DurationSlider from "./DurationSlider";
 import { PrimaryButton } from "./Button";
 import { IconPlus } from "./icons/FormIcons";
-import {
-	DURATION_MAX,
-	DURATION_MIN,
-	DURATION_STEP,
-	gameModeOptions,
-	musicStyle,
-	roundsOptions,
-} from "../constants/createGameOptions";
+import { gameModeOptions, musicStyle, roundsOptions } from "../constants/createGameOptions";
 import { useCreateGameForm } from "../hooks/useCreateGameForm";
-import { StorageKeys, StorageUtility } from "../hooks/useStorage";
-import type { gameCategoryProps } from "../types";
-import { useEffect } from "react";
+import { filterGameModesForCategory } from "../util";
+import { useEffect, useMemo } from "react";
 
 export default function CreateGameForm() {
 	const {
 		gameFormSettings,
 		setGameFormSettings,
 		player,
-		setPlayer,
+		handlePseudoName,
 		isSubmitting,
 		error,
 		buttonDisabled,
 		handleSubmit,
 	} = useCreateGameForm();
 
-	const gameCategory: string = gameFormSettings.category.label;
-	const gameMode: gameCategoryProps[] = gameModeOptions;
+	// Memoized so the effect below doesn't re-run on every render.
+	const filteredGameMode = useMemo(
+		() => filterGameModesForCategory(gameFormSettings.category.value),
+		[gameFormSettings.category.value],
+	);
 
-	const filteredGameMode =
-		gameCategory === musicStyle[3].label || gameCategory === musicStyle[4].label
-			? gameMode.filter((g) => g.label === "Titre")
-			: gameMode.slice(0, -1);
-
+	// Switching playlist can invalidate the selected mode — fall back to the
+	// first one the new playlist actually offers.
 	useEffect(() => {
 		const stillValid = filteredGameMode.some(
 			(option) => option.value === gameFormSettings.mode.value,
@@ -45,16 +38,6 @@ export default function CreateGameForm() {
 			setGameFormSettings((prev) => ({ ...prev, mode: filteredGameMode[0] }));
 		}
 	}, [filteredGameMode, gameFormSettings.mode.value, setGameFormSettings]);
-
-	// function to handle the pseudo storage saving
-	const handlePseudoName = (
-		event: React.ChangeEvent<HTMLInputElement, HTMLInputElement>,
-	) => {
-		event.preventDefault();
-
-		setPlayer((prev) => ({ ...prev, pseudo: event.target.value }));
-		StorageUtility.setItem(StorageKeys.USER_NAME, event.target.value);
-	};
 
 	return (
 		<form
@@ -109,7 +92,7 @@ export default function CreateGameForm() {
 			/>
 
 			<SelectField
-				id='lobby-settings-mode'
+				id='create-game-mode'
 				label='Mode de jeu'
 				value={gameFormSettings.mode.value}
 				onChange={(e) => {
@@ -138,34 +121,13 @@ export default function CreateGameForm() {
 				options={roundsOptions}
 			/>
 
-			<div className='flex flex-col gap-2'>
-				<label
-					htmlFor='lobby-settings-duration'
-					className='text-[0.9rem] font-semibold'
-				>
-					Durée des extraits
-				</label>
-				<div className='flex items-center gap-3 rounded-2xl border border-lavender/14 bg-bg-deep/35 px-4 py-3.5'>
-					<input
-						id='lobby-settings-duration'
-						type='range'
-						min={DURATION_MIN}
-						max={DURATION_MAX}
-						step={DURATION_STEP}
-						value={gameFormSettings.duration}
-						onChange={(e) =>
-							setGameFormSettings((prev) => ({
-								...prev,
-								duration: Number(e.target.value),
-							}))
-						}
-						className='w-full accent-accent-blue'
-					/>
-					<span className='w-10 shrink-0 text-right text-[0.9rem] text-lavender/68'>
-						{gameFormSettings.duration}s
-					</span>
-				</div>
-			</div>
+			<DurationSlider
+				id='create-game-duration'
+				value={gameFormSettings.duration}
+				onChange={(duration) =>
+					setGameFormSettings((prev) => ({ ...prev, duration }))
+				}
+			/>
 
 			<ToggleField
 				id='lobby-public'

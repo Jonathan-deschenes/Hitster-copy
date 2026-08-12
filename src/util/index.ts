@@ -1,8 +1,44 @@
-import { GameMode, type GameModeEnum, type playerProps } from "../types";
+import {
+	GameMode,
+	type gameCategoryProps,
+	type GameModeEnum,
+	type playerProps,
+} from "../types";
 import {
 	DEFAULT_QUESTION,
+	gameModeOptions,
 	gameModeQuestions,
+	TITLE_ONLY_PLAYLISTS,
 } from "../constants/createGameOptions";
+
+/**
+ * Players sorted by score, each keeping the index it had in the *unsorted*
+ * list — `PlayerAvatar` picks its gradient from that, so it must not shuffle
+ * as the standings move.
+ */
+export function rankPlayers(players: playerProps[]) {
+	return players
+		.map((player, toneIndex) => ({ player, toneIndex }))
+		.sort((a, b) => (b.player.score ?? 0) - (a.player.score ?? 0))
+		.map((entry, index) => ({ ...entry, rank: index + 1 }));
+}
+
+export function playerDisplayName(pseudo: string, isYou = false) {
+	return `${pseudo || "Anonyme"}${isYou ? " (toi)" : ""}`;
+}
+
+/**
+ * Modes offerable for a playlist. Soundtrack playlists only support `Titre`
+ * ("where is this music from?"); everywhere else `Titre` is dropped instead,
+ * since it has no answer for a regular song.
+ */
+export function filterGameModesForCategory(
+	categoryValue: string,
+): gameCategoryProps[] {
+	return TITLE_ONLY_PLAYLISTS.has(categoryValue)
+		? gameModeOptions.filter((mode) => mode.value === GameMode.Titre)
+		: gameModeOptions.slice(0, -1);
+}
 
 export function pickRandomOtherPlayer(
 	players: playerProps[],

@@ -36,7 +36,6 @@ interface PasswordFieldProps extends Omit<
 	id: string;
 	label: string;
 	hint?: string;
-	optional?: boolean;
 }
 
 export default function PasswordField({
@@ -49,7 +48,7 @@ export default function PasswordField({
 
 	return (
 		<div className='flex flex-col gap-2'>
-			<label htmlFor={id} className='text-[0.9rem] font-semibold'>
+			<label htmlFor={id} className='field-label'>
 				{label}{" "}
 			</label>
 			<div className='relative flex'>
@@ -59,7 +58,7 @@ export default function PasswordField({
 					type={show ? "text" : "password"}
 					placeholder='Lorem ipsum'
 					autoComplete='new-password'
-					className='w-full rounded-xl border border-lavender/14 bg-bg-deep/55 py-3.5 pr-11 pl-4 text-[0.95rem] text-inherit transition-colors duration-200 placeholder:text-lavender/44 hover:border-lavender/28 focus:border-purple-soft focus:bg-purple/[0.08] focus:shadow-[0_0_0_3px_rgba(126,20,255,0.22)] focus:outline-none'
+					className='field-input py-3.5 pr-11 pl-4 text-[0.95rem]'
 					{...props}
 				/>
 				<button

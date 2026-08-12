@@ -1,19 +1,24 @@
 export {
-	findLobbyRowByName,
 	findLobbyRowByCode,
 	findPublicLobbies,
 	getLobbyByCode,
 } from "./queries";
-export { createLobby, joinLobby, leaveLobby, deleteLobby } from "./lobbyMutations";
+export {
+	createLobby,
+	joinLobby,
+	leaveLobby,
+	deleteLobby,
+	promotePlayer,
+} from "./lobbyMutations";
 export {
 	finishRound,
 	pauseRound,
 	resumeRound,
 	startRound,
+	updateGameSettings,
 	updateGameStatus,
-	updateTurn,
+	updatePlayerAnswer,
 } from "./gameStateMutations";
-export { getMusicQueue, removeMusicFromQueue } from "./musicQueueMutations";
 export {
 	subscribeToPublicLobbies,
 	subscribeToLobbyByCode,

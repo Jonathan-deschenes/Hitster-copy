@@ -1,5 +1,4 @@
-import type { ButtonHTMLAttributes } from "react";
-import { Link, type LinkProps } from "react-router-dom";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 const base =
   "inline-flex items-center justify-center gap-2.5 rounded-2xl border border-transparent px-7 py-4 text-[0.95rem] font-semibold whitespace-nowrap transition duration-200 ease-out active:translate-y-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-accent-blue disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0";
@@ -24,10 +23,29 @@ export function SecondaryButton({
   return <button className={`${base} ${secondary} ${className}`} {...props} />;
 }
 
-export function PrimaryLink({ className = "", ...props }: LinkProps) {
-  return <Link className={`${base} ${primary} ${className}`} {...props} />;
+interface IconButtonProps
+  extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> {
+  /** Serves as both the accessible name and the tooltip. */
+  label: string;
+  icon: ReactNode;
 }
 
-export function SecondaryLink({ className = "", ...props }: LinkProps) {
-  return <Link className={`${base} ${secondary} ${className}`} {...props} />;
+/** Square, icon-only secondary button — the footer's control cluster. */
+export function IconButton({
+  label,
+  icon,
+  className = "",
+  ...props
+}: IconButtonProps) {
+  return (
+    <button
+      type='button'
+      aria-label={label}
+      title={label}
+      className={`${base} ${secondary} p-2! ${className}`}
+      {...props}
+    >
+      {icon}
+    </button>
+  );
 }

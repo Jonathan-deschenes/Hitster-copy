@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { playerProps } from "../../types";
 import { IconCrown, IconKick, IconMore } from "../icons/PlayerIcons";
 import { RANK_STYLES } from "./rankStyles";
+import { playerDisplayName, rankPlayers } from "../../util";
 
 interface ScoreboardProps {
 	players: playerProps[];
@@ -37,12 +38,9 @@ export default function Scoreboard({
 		return () => document.removeEventListener("mousedown", handleClickOutside);
 	}, [menuPlayerId]);
 
-	const ranked = [...players].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-
 	return (
 		<ol className='flex h-full flex-col gap-2 overflow-y-auto pr-1'>
-			{ranked.map((player, index) => {
-				const rank = index + 1;
+			{rankPlayers(players).map(({ player, rank }) => {
 				const isYou = player.id === currentPlayerId;
 				const isManageable = canManagePlayers && !isYou;
 				const isMenuOpen = menuPlayerId === player.id;
@@ -67,8 +65,7 @@ export default function Scoreboard({
 
 						<span className='flex min-w-0 flex-1 items-center gap-1.5 truncate text-[0.95rem] font-medium'>
 							<span className='truncate'>
-								{player.pseudo || "Anonyme"}
-								{isYou && " (toi)"}
+								{playerDisplayName(player.pseudo, isYou)}
 							</span>
 							{player.host && (
 								<span className='shrink-0 text-accent-blue'>

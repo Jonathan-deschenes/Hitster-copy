@@ -23,7 +23,7 @@ export default function LobbyAnswerBox({
 
 	return (
 		<div
-			className={`flex w-full max-w-md flex-col rounded-3xl border border-lavender/14 bg-lavender/5 p-5 backdrop-blur-lg ${className}`}
+			className={`flex w-full max-w-md flex-col glass-panel ${className}`}
 		>
 			<div className='mb-4 flex shrink-0 flex-col gap-1'>
 				<h2 className='font-display text-lg font-bold'>

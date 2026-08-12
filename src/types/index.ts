@@ -13,11 +13,6 @@ export type createGameFormSettingsProps = {
 	duration: number;
 };
 
-export type joinGameFormSettingsProps = {
-	name: string;
-	password: string;
-};
-
 export type lobbySettingsFormProps = {
 	mode: string;
 	rounds: number;
@@ -61,7 +56,6 @@ export type GameModeEnum = (typeof GameMode)[keyof typeof GameMode];
 export type gameStateProps = {
 	mode: GameModeEnum;
 	status: GameStateEnum;
-	turn: number;
 	round: number;
 	question: string;
 	/**
@@ -115,45 +109,13 @@ export type lobbyRowProps = {
 	music_queue: playlistQueueProps;
 };
 
-export type spotifyImageProps = {
+// The raw Spotify Web API shapes live in the `spotify-playlist` Edge Function,
+// which is the only thing that talks to the catalog API. The client sees only
+// the flattened `musicItemsProps` it returns.
+type spotifyImageProps = {
 	url: string;
 	height: number | null;
 	width: number | null;
-};
-
-export type spotifyArtistProps = {
-	id: string;
-	name: string;
-};
-
-export type spotifyAlbumProps = {
-	id: string;
-	name: string;
-	release_date: string;
-	images: spotifyImageProps[];
-};
-
-export type spotifyTrackProps = {
-	id: string;
-	name: string;
-	duration_ms: number;
-	artists: spotifyArtistProps[];
-	album: spotifyAlbumProps;
-};
-
-// via GET /v1/playlists/{playlist_id}/items
-export type spotifyPlaylistItemProps = {
-	added_at: string;
-	is_local: boolean;
-	track: spotifyTrackProps;
-};
-
-export type spotifyPlaylistItemsPageProps = {
-	items: spotifyPlaylistItemProps[];
-	total: number;
-	limit: number;
-	offset: number;
-	next: string | null;
 };
 
 export type musicItemsProps = {

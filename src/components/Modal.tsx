@@ -1,7 +1,47 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { IconClose } from "./icons/GameIcons";
 
 type ModalPhase = "closed" | "opening" | "open" | "closing";
+
+/** The round "×" every modal puts in its top-right corner. */
+export function ModalCloseButton({ onClose }: { onClose: () => void }) {
+	return (
+		<button
+			type='button'
+			onClick={onClose}
+			aria-label='Fermer'
+			className='inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-lavender/14 bg-lavender/[0.04] text-lavender/68 transition-colors hover:border-purple-soft hover:bg-purple/[0.14] hover:text-white'
+		>
+			<IconClose />
+		</button>
+	);
+}
+
+interface ModalHeaderProps {
+	/** Must match the `labelledBy` given to the surrounding `Modal`. */
+	id: string;
+	title: ReactNode;
+	onClose: () => void;
+}
+
+/** Title row + close button. Pair with `ModalBody` for the scrolling content. */
+export function ModalHeader({ id, title, onClose }: ModalHeaderProps) {
+	return (
+		<div className='flex shrink-0 items-center justify-between gap-4 p-6 pb-4'>
+			<h2 id={id} className='font-display text-lg font-bold'>
+				{title}
+			</h2>
+			<ModalCloseButton onClose={onClose} />
+		</div>
+	);
+}
+
+export function ModalBody({ children }: { children: ReactNode }) {
+	return (
+		<div className='min-h-0 flex-1 overflow-y-auto px-6 pb-6'>{children}</div>
+	);
+}
 
 interface ModalProps {
 	open: boolean;

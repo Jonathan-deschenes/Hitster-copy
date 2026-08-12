@@ -27,7 +27,7 @@ export default function PublicLobbyTable({
 				value={search}
 				onChange={(event) => setSearch(event.target.value)}
 				placeholder="Rechercher une partie par nom"
-				className="w-full rounded-xl border border-lavender/14 bg-bg-deep/55 px-4 py-3 text-[0.9rem] text-inherit transition-colors duration-200 placeholder:text-lavender/44 hover:border-lavender/28 focus:border-purple-soft focus:bg-purple/[0.08] focus:shadow-[0_0_0_3px_rgba(126,20,255,0.22)] focus:outline-none"
+				className="field-input px-4 py-3 text-[0.9rem]"
 			/>
 
 			<div className="max-h-[260px] overflow-y-auto overflow-x-auto rounded-xl border border-lavender/14">

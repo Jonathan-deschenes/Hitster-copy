@@ -18,6 +18,28 @@
 	--animate-pulse-glow: pulse-glow 2.2s ease-in-out infinite;
 }
 
+/* Class strings that were repeated verbatim across 3+ components. Compose
+   them with ordinary utilities for the per-site deltas. */
+
+@utility glass-panel {
+	@apply rounded-3xl border border-lavender/14 bg-lavender/5 p-5 backdrop-blur-lg;
+}
+
+@utility field-label {
+	@apply text-[0.9rem] font-semibold;
+}
+
+/* Surface + focus treatment only. Padding and font size stay per-site: they
+   differ at 4 of the 5 call sites, and overriding a custom utility from the
+   class attribute depends on emitted-CSS order rather than the order written. */
+@utility field-input {
+	@apply w-full rounded-xl border border-lavender/14 bg-bg-deep/55 text-inherit transition-colors duration-200 placeholder:text-lavender/44 hover:border-lavender/28 focus:border-purple-soft focus:bg-purple/[0.08] focus:shadow-[0_0_0_3px_rgba(126,20,255,0.22)] focus:outline-none;
+}
+
+@utility control-shell {
+	@apply rounded-2xl border border-lavender/14 bg-bg-deep/35 px-4 py-3.5;
+}
+
 @keyframes pulse-glow {
 	0%,
 	100% {

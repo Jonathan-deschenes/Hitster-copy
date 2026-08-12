@@ -120,3 +120,10 @@ export function useSpotifyPlayer({ enabled }: UseSpotifyPlayerOptions) {
 		[deviceId, error, play, pause, resume, volume],
 	);
 }
+
+/**
+ * The memoized handle above. Hooks that receive it must take the **whole**
+ * object: a narrowed `{ pause, resume }` literal changes identity every render
+ * and would re-run the playback reconciler continuously.
+ */
+export type spotifyPlayerHandleProps = ReturnType<typeof useSpotifyPlayer>;

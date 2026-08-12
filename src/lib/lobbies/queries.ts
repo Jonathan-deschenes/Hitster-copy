@@ -2,19 +2,6 @@ import { supabase } from "../supabaseClient";
 import type { lobbyProps, lobbyRowProps } from "../../types";
 import { rowToLobby } from "./mappers";
 
-export async function findLobbyRowByName(
-	name: string,
-): Promise<lobbyRowProps | null> {
-	const { data, error } = await supabase
-		.from("lobbies")
-		.select()
-		.eq("name", name)
-		.maybeSingle();
-
-	if (error) throw error;
-	return data as lobbyRowProps | null;
-}
-
 export async function findLobbyRowByCode(
 	code: string,
 ): Promise<lobbyRowProps | null> {

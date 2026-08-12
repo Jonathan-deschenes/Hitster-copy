@@ -1,18 +1,15 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import bcrypt from "bcryptjs-react";
-import generateUniqueId from "generate-unique-id";
-import type { createGameFormSettingsProps, playerProps } from "../types";
+import type { createGameFormSettingsProps } from "../types";
 import { createLobby } from "../lib/lobbies";
 import { gameModeOptions, musicStyle } from "../constants/createGameOptions";
-import { StorageKeys, StorageUtility } from "./useStorage";
+import { usePlayerIdentity } from "./usePlayerIdentity";
 
 export function useCreateGameForm() {
 	const navigate = useNavigate();
 
-	// Retrieve saved pseudo in localstorage
-	const savedPseudo =
-		StorageUtility.getItem<string>(StorageKeys.USER_NAME) ?? "";
+	const { player, handlePseudoName } = usePlayerIdentity(true);
 
 	const [gameFormSettings, setGameFormSettings] =
 		useState<createGameFormSettingsProps>({
@@ -24,13 +21,6 @@ export function useCreateGameForm() {
 			rounds: 10,
 			duration: 30,
 		});
-	const [player, setPlayer] = useState<playerProps>({
-		id: generateUniqueId(),
-		pseudo: savedPseudo,
-		host: true,
-		score: 0,
-		answer: "",
-	});
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
@@ -77,7 +67,7 @@ export function useCreateGameForm() {
 		gameFormSettings,
 		setGameFormSettings,
 		player,
-		setPlayer,
+		handlePseudoName,
 		isSubmitting,
 		error,
 		buttonDisabled,

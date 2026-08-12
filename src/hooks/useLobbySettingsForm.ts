@@ -1,7 +1,7 @@
 import { useState, type FormEvent, type SetStateAction } from "react";
 import type { lobbyProps, lobbySettingsFormProps } from "../types";
 import { gameModeOptions } from "../constants/createGameOptions";
-import { updateGameSettings } from "../lib/lobbies/gameStateMutations";
+import { updateGameSettings } from "../lib/lobbies";
 
 export function useLobbySettingsForm(
 	lobby: lobbyProps,
@@ -9,7 +9,8 @@ export function useLobbySettingsForm(
 	desktopMenuClose: React.Dispatch<SetStateAction<boolean>>,
 ) {
 	const [settings, setSettings] = useState<lobbySettingsFormProps>({
-		mode: lobby.game_state?.mode ?? gameModeOptions[0],
+		// `.value`, not the option object — this field is the mode string.
+		mode: lobby.game_state?.mode ?? gameModeOptions[0].value,
 		rounds: lobby.game_state?.totalRounds ?? 10,
 		category: lobby.category,
 		public: lobby.public,

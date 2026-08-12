@@ -5,13 +5,12 @@ import { PrimaryButton, SecondaryButton } from "./Button";
 import { IconArrowRight } from "./icons/FormIcons";
 import { usePublicLobbies } from "../hooks/usePublicLobbies";
 import { useJoinGameForm } from "../hooks/useJoinGameForm";
-import { StorageKeys, StorageUtility } from "../hooks/useStorage";
 
 export default function JoinGameForm() {
 	const { publicLobbies, loading: loadingPublicLobbies } = usePublicLobbies();
 	const {
 		player,
-		setPlayer,
+		handlePseudoName,
 		code,
 		setCode,
 		isSearchingCode,
@@ -26,16 +25,6 @@ export default function JoinGameForm() {
 		canSearchCode,
 		canJoin,
 	} = useJoinGameForm();
-
-	// function to handle the pseudo storage saving
-	const handlePseudoName = (
-		event: React.ChangeEvent<HTMLInputElement, HTMLInputElement>,
-	) => {
-		event.preventDefault();
-
-		setPlayer((prev) => ({ ...prev, pseudo: event.target.value }));
-		StorageUtility.setItem(StorageKeys.USER_NAME, event.target.value);
-	};
 
 	return (
 		<div className='flex flex-col gap-5'>
@@ -71,7 +60,7 @@ export default function JoinGameForm() {
 			</div>
 
 			<div className='flex min-h-0 flex-1 flex-col gap-3'>
-				<span className='text-[0.9rem] font-semibold'>Parties publiques</span>
+				<span className='field-label'>Parties publiques</span>
 				<PublicLobbyTable
 					lobbies={publicLobbies}
 					selectedCode={selectedLobbyRow?.code ?? null}

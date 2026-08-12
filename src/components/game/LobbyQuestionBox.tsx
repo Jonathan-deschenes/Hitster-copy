@@ -52,7 +52,7 @@ export default function LobbyQuestionBox({
 	if (gameState.status === "playing" || gameState.status === "paused") {
 		return (
 			<div
-				className={`flex w-full max-w-md flex-col rounded-3xl border border-lavender/14 bg-lavender/5 p-5 backdrop-blur-lg ${className}`}
+				className={`flex w-full max-w-md flex-col glass-panel ${className}`}
 			>
 				<span className='mb-4 flex items-center gap-4 text-lavender/80'>
 					<IconChat />
@@ -69,7 +69,7 @@ export default function LobbyQuestionBox({
 						disabled={submitted}
 						maxLength={80}
 						placeholder='Écris ta réponse ici...'
-						className='w-full rounded-xl border border-lavender/14 bg-bg-deep/55 px-4 py-3.5 text-[0.95rem] text-inherit transition-colors duration-200 placeholder:text-lavender/44 hover:border-lavender/28 focus:border-purple-soft focus:bg-purple/[0.08] focus:shadow-[0_0_0_3px_rgba(126,20,255,0.22)] focus:outline-none disabled:cursor-not-allowed disabled:border-lavender/14 disabled:opacity-60'
+						className='field-input px-4 py-3.5 text-[0.95rem] disabled:cursor-not-allowed disabled:border-lavender/14 disabled:opacity-60'
 					/>
 
 					<PrimaryButton

@@ -1,7 +1,6 @@
-import Modal from "./Modal";
+import Modal, { ModalCloseButton } from "./Modal";
 import CreateGameForm from "./CreateGameForm";
 import JoinGameForm from "./JoinGameForm";
-import { IconClose } from "./icons/GameIcons";
 
 export type PlayModalTab = "create" | "join";
 
@@ -39,14 +38,7 @@ export default function PlayModal({
 					</h1>
 				</div>
 
-				<button
-					type='button'
-					onClick={onClose}
-					aria-label='Fermer'
-					className='inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-lavender/14 bg-lavender/[0.04] text-lavender/68 transition-colors hover:border-purple-soft hover:bg-purple/[0.14] hover:text-white'
-				>
-					<IconClose />
-				</button>
+				<ModalCloseButton onClose={onClose} />
 			</div>
 
 			<div className='shrink-0 px-6 pt-5 sm:px-8'>

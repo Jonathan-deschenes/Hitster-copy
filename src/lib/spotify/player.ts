@@ -70,18 +70,12 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 	});
 }
 
-// Spotify Connect applies one command at a time per device, and a command that
-// arrives while the previous one is still settling comes back as
-// 403 "Restriction violated". Chaining every request for a device keeps them in
-// the order they were issued and — since a request can spend seconds in the
-// retry loop below — stops a stale command from landing after a newer one.
+// Spotify Connect applies one command at a time per device and answers an
+// overlapping one with 403 "Restriction violated", so requests are chained.
 const deviceQueues = new Map<string, Promise<unknown>>();
 
-// Latest intent wins. A command stuck in the retry loop below can hold its
-// device for seconds while the round runs on, and whatever it eventually
-// achieves is already out of date — the newer command is the one that reflects
-// the game. Aborting the older one frees the queue immediately and, for two
-// `play`s in a row, stops the older track from being audible at all.
+// Latest intent wins: a command stuck in the retry loop holds the device for
+// seconds while the round runs on, and what it finally achieves is stale.
 const deviceAborts = new Map<string, AbortController>();
 
 function enqueue<T>(
@@ -103,13 +97,9 @@ function enqueue<T>(
 	return settled;
 }
 
-// Keyed by `command:deviceId` so an overlapping call for the same command
-// (e.g. two effect runs triggered in quick succession by unrelated realtime
-// updates, or React StrictMode's dev-only double-invoke) reuses the request
-// already in flight instead of firing a second one and doubling any error.
-// The key is the command rather than the endpoint: "start this track" and
-// "resume" share the /play path but are different intents, and collapsing one
-// into the other silently drops it.
+// Keyed by `command:deviceId` so an overlapping identical call reuses the
+// in-flight request. Keyed on the command, not the endpoint: "start this track"
+// and "resume" share /play but are different intents.
 const inFlightRequests = new Map<string, Promise<void>>();
 
 function callPlayerEndpoint(
@@ -156,11 +146,8 @@ async function sendPlayerRequest(
 
 		const text = await response.text();
 
-		// A device_id fresh from the Web Playback SDK's "ready" event can take
-		// a moment to be registered as controllable on Spotify's backend, which
-		// surfaces as a transient 403 "Restriction violated" (or 404) right
-		// after connecting. Retry that window instead of failing immediately.
-		// PREMIUM_REQUIRED 403s are a real, permanent rejection, so exclude them.
+		// A device fresh from "ready" needs a moment to become controllable,
+		// which surfaces as a transient 403/404. PREMIUM_REQUIRED is permanent.
 		const isTransient =
 			TRANSIENT_RETRY_STATUSES.has(response.status) &&
 			!text.includes("PREMIUM_REQUIRED");
@@ -201,18 +188,14 @@ export function pausePlaybackOnDevice(
 	deviceId: string,
 	accessToken: string,
 ): Promise<void> {
-	// No retries: reaching here means the SDK reported nothing playing locally,
-	// so a 403 almost certainly means there was nothing to pause. Retrying it
-	// would block the device queue for seconds over a command that doesn't
-	// matter, delaying the next track.
+	// No retries: the SDK reported nothing playing locally, so a 403 means
+	// there was nothing to pause — retrying would block the queue for nothing.
 	return callPlayerEndpoint("pause", "pause", deviceId, accessToken, {
 		retries: 0,
 	});
 }
 
-// There is deliberately no `resumePlaybackOnDevice`. `PUT /play` with no body
-// asks a device to resume the context it already holds, so it only ever worked
-// on a device the SDK could have resumed locally anyway — and on one that holds
-// nothing (a host promoted mid-game) it is a guaranteed
-// `403 Restriction violated`. Callers start the track at the round's position
-// instead; see `useSpotifyPlayer.resume`.
+// There is deliberately no `resumePlaybackOnDevice`: `PUT /play` with no body
+// resumes the context a device already holds, and on one that holds nothing —
+// a host promoted mid-game — it is a guaranteed 403. Callers start the track at
+// the round's position instead; see `useSpotifyPlayer.resume`.

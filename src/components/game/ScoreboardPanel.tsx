@@ -21,7 +21,7 @@ export default function ScoreboardPanel({
 }: ScoreboardPanelProps) {
 	return (
 		<div
-			className={`flex h-full w-full max-w-sm flex-col rounded-3xl border border-lavender/14 bg-lavender/5 p-5 backdrop-blur-lg ${className}`}
+			className={`flex h-full w-full max-w-sm flex-col glass-panel ${className}`}
 		>
 			<div className='mb-4 flex shrink-0 items-center gap-2'>
 				<IconTrophy />

@@ -4,21 +4,25 @@ import { GameStatus } from "../types";
 import type { GameStateEnum, lobbyProps, playerProps } from "../types";
 import {
 	deleteLobby,
+	finishRound,
 	leaveLobby,
 	pauseRound,
+	promotePlayer,
 	resumeRound,
 	startRound,
 	subscribeToLobbyPresence,
+	updateGameSettings,
+	updatePlayerAnswer,
 } from "../lib/lobbies";
-import { promotePlayer } from "../lib/lobbies/lobbyMutations";
 import { pickRandomOtherPlayer, pickSuccessorPlayer } from "../util";
-import { useSpotifyPlayer } from "./useSpotifyPlayer";
-import { updatePlayerAnswer } from "../lib/lobbies/gameStateMutations";
+import type { spotifyPlayerHandleProps } from "./useSpotifyPlayer";
 
 interface UseGameActionsParams {
 	code?: string;
 	lobby: lobbyProps | null;
 	currentPlayerId?: string | null;
+	/** Owned by the page — see the single call site in `pages/Game.tsx`. */
+	spotifyPlayer: spotifyPlayerHandleProps;
 }
 
 /** Promotes `successor` and removes the departing player, or deletes the lobby if no one is left to hand it to. */
@@ -39,17 +43,12 @@ export function useGameActions({
 	code,
 	lobby,
 	currentPlayerId,
+	spotifyPlayer,
 }: UseGameActionsParams) {
 	const navigate = useNavigate();
 
 	const currentPlayer = lobby?.player.find((p) => p.id === currentPlayerId);
 	const players = lobby?.player;
-
-	// Deliberately not scoped to `currentPlayer?.host`: any Spotify-connected
-	// player pre-warming a device while they're just a regular player is what
-	// lets a later promotion resume instantly instead of racing Spotify's
-	// "device not yet controllable" window right at handoff time.
-	const spotifyPlayer = useSpotifyPlayer({ enabled: true });
 
 	// Kept fresh without re-subscribing the presence channel on every lobby update.
 	const playersRef = useRef(players);
@@ -159,12 +158,35 @@ export function useGameActions({
 		await updatePlayerAnswer(code, answer, playerId);
 	}
 
+	/** Ends the round early, revealing and scoring the track as it stands. */
+	async function handleSkipTrack() {
+		if (!code || !lobby) return;
+
+		const { items = [], current = 0 } = lobby.music_queue ?? {};
+		await finishRound(code, items[current]);
+	}
+
+	/** "Relancer la partie": same settings, scores and round counter back to 0. */
+	async function handleRestartGame() {
+		if (!code || !lobby) return;
+
+		await updateGameSettings(code, {
+			mode: lobby.game_state.mode,
+			rounds: lobby.game_state.totalRounds,
+			category: lobby.category,
+			public: lobby.public,
+			duration: lobby.game_state.duration,
+		});
+	}
+
 	return {
 		currentPlayer,
 		handleLeaving,
 		handlePlayerKick,
 		handlePlayerPromotion,
 		handlePlayerAnswer,
+		handleSkipTrack,
+		handleRestartGame,
 		hostActionByStatus,
 	};
 }

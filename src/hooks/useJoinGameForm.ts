@@ -1,23 +1,14 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import bcrypt from "bcryptjs-react";
-import generateUniqueId from "generate-unique-id";
-import type { lobbyRowProps, playerProps } from "../types";
+import type { lobbyRowProps } from "../types";
 import { findLobbyRowByCode, joinLobby } from "../lib/lobbies";
-import { StorageKeys, StorageUtility } from "./useStorage";
+import { usePlayerIdentity } from "./usePlayerIdentity";
 
 export function useJoinGameForm() {
 	const navigate = useNavigate();
-	// Retrieve saved pseudo in localstorage
-	const savedPseudo =
-		StorageUtility.getItem<string>(StorageKeys.USER_NAME) ?? "";
-	const [player, setPlayer] = useState<playerProps>({
-		id: generateUniqueId(),
-		pseudo: savedPseudo,
-		host: false,
-		score: 0,
-		answer: "",
-	});
+
+	const { player, handlePseudoName } = usePlayerIdentity(false);
 
 	const [code, setCode] = useState("");
 	const [isSearchingCode, setIsSearchingCode] = useState(false);
@@ -94,7 +85,7 @@ export function useJoinGameForm() {
 
 	return {
 		player,
-		setPlayer,
+		handlePseudoName,
 		code,
 		setCode,
 		isSearchingCode,

@@ -6,16 +6,17 @@ import type {
 	lobbyProps,
 	lobbyRowProps,
 	playerProps,
-	playlistQueueProps,
 } from "../../types";
 import { rowToLobby } from "./mappers";
 import { getRandomCode } from "./codeGenerator";
-import { fetchPlaylistTracks } from "../spotify/playlist";
-import shuffle from "lodash/shuffle";
+import { findLobbyRowByCode } from "./queries";
+import {
+	regenerateMusicQueue,
+	UNIQUE_VIOLATION,
+	updateLobbyRow,
+} from "./rowOperations";
 import { resolveGameQuestion } from "../../util";
 import { elapsedMs } from "../playback";
-
-const UNIQUE_VIOLATION = "23505";
 
 type CreateLobbyInput = {
 	name: string;
@@ -46,8 +47,7 @@ export async function createLobby(
 				category: settings.category,
 				game_state: {
 					mode: settings.mode as GameModeEnum,
-					status: "waiting",
-					turn: 0,
+					status: GameStatus.Waiting,
 					round: 0,
 					question,
 					questionMode,
@@ -61,25 +61,7 @@ export async function createLobby(
 
 		if (!error && data) {
 			const row = data as lobbyRowProps;
-
-			const tracks = await fetchPlaylistTracks(
-				settings.category.value,
-				settings.rounds,
-			);
-			const music_queue: playlistQueueProps = {
-				items: shuffle(tracks),
-				current: 0,
-			};
-
-			const { data: withQueue, error: queueError } = await supabase
-				.from("lobbies")
-				.update({ music_queue })
-				.eq("id", row.id)
-				.select()
-				.single();
-
-			if (queueError) throw queueError;
-			return rowToLobby(withQueue as lobbyRowProps);
+			return regenerateMusicQueue(row.id, settings.category, settings.rounds);
 		}
 
 		if (error && error.code !== UNIQUE_VIOLATION) {
@@ -110,27 +92,12 @@ export async function leaveLobby(
 	code: string,
 	playerId: string,
 ): Promise<lobbyProps | null> {
-	const { data, error: fetchError } = await supabase
-		.from("lobbies")
-		.select()
-		.eq("code", code)
-		.maybeSingle();
+	const row = await findLobbyRowByCode(code);
+	if (!row) return null;
 
-	if (fetchError) throw fetchError;
-	if (!data) return null;
-
-	const row = data as lobbyRowProps;
-	const players = row.players.filter((player) => player.id !== playerId);
-
-	const { data: updated, error } = await supabase
-		.from("lobbies")
-		.update({ players })
-		.eq("code", code)
-		.select()
-		.single();
-
-	if (error) throw error;
-	return rowToLobby(updated as lobbyRowProps);
+	return updateLobbyRow(code, {
+		players: row.players.filter((player) => player.id !== playerId),
+	});
 }
 
 export async function deleteLobby(code: string): Promise<void> {
@@ -154,31 +121,13 @@ export async function promotePlayer(
 	code: string,
 	playerId: string,
 ): Promise<lobbyProps | null> {
-	const { data, error: fetchError } = await supabase
-		.from("lobbies")
-		.select()
-		.eq("code", code)
-		.maybeSingle();
+	const row = await findLobbyRowByCode(code);
+	if (!row) return null;
 
-	if (fetchError) throw fetchError;
-	if (!data) return null;
-
-	const row = data as lobbyRowProps;
-
-	// update via js the player array
-	const updatedPlayers = row.players.map((p) => ({
-		...p,
-		host: p.id === playerId,
-	}));
-
-	// Handing off host mid-round would otherwise leave stale audio playing on
-	// the outgoing host's browser while the game keeps ticking with no one
-	// driving playback. Pause so the new host can resume once their own
-	// device is ready.
-	//
-	// Freezing the clock is what lets them resume *in the right place*: their
-	// device holds no Spotify context, so it can only start the track fresh,
-	// and without this the handoff gap would be counted as round time.
+	// Pause a running game so stale audio doesn't keep playing on the outgoing
+	// host's browser, and freeze the clock so the handoff gap isn't counted as
+	// round time — the new host holds no Spotify context and can only start the
+	// track fresh, at whatever position the row says the round has reached.
 	const game_state =
 		row.game_state.status === GameStatus.Playing
 			? {
@@ -188,13 +137,8 @@ export async function promotePlayer(
 				}
 			: row.game_state;
 
-	const { data: updated, error } = await supabase
-		.from("lobbies")
-		.update({ players: updatedPlayers, game_state })
-		.eq("code", code)
-		.select()
-		.single();
-
-	if (error) throw error;
-	return rowToLobby(updated as lobbyRowProps);
+	return updateLobbyRow(code, {
+		players: row.players.map((p) => ({ ...p, host: p.id === playerId })),
+		game_state,
+	});
 }

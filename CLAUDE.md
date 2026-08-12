@@ -54,8 +54,8 @@ pages/  →  hooks/  →  lib/{lobbies,spotify,scoring}  →  lib/supabaseClient
 | Path | Responsibility |
 | --- | --- |
 | `src/pages/` | `Home`, `Game`, `SpotifyCallback`. Routes are declared in `App.tsx`. |
-| `src/hooks/` | Stateful glue: `useLobbyRealtime`, `useGameActions`, `useSpotifyPlayer`, `useMusicQueue`, plus the form hooks. |
-| `src/lib/lobbies/` | **Every** Supabase read and write, split by concern. |
+| `src/hooks/` | Stateful glue: `useLobbyRealtime`, `useGameActions`, `useSpotifyPlayer`, `useHostPlayback`, `useRoundLifecycle`, `useAnswerChime`, `useMusicQueue`, `usePlayerIdentity`, plus the form hooks. |
+| `src/lib/lobbies/` | **Every** Supabase read and write, split by concern. `rowOperations.ts` holds the shared read-modify-write plumbing. |
 | `src/lib/scoring/` | Pure grading logic. No imports outside `types`. |
 | `src/lib/playback/` | Pure round clock (`elapsedMs`, `remainingSeconds`) and `resolvePlaybackIntent`. No imports outside `types`. |
 | `src/lib/spotify/` | `auth` (PKCE), `playerStore` (singleton device), `player` (Web API calls), `playlist` (Edge Function call). |
@@ -64,6 +64,23 @@ pages/  →  hooks/  →  lib/{lobbies,spotify,scoring}  →  lib/supabaseClient
 | `supabase/` | `schema.sql` and the `spotify-playlist` Edge Function. |
 
 Routes: `/` · `/create` · `/join` · `/game/:code` · `/spotify/callback`.
+
+### `Game.tsx` is composition only
+
+The page holds no game logic. It resolves the lobby, derives the two host roles, calls five hooks
+and renders four children — nothing else. Each hook owns one concern and one set of invariants:
+
+| Hook | Owns |
+| --- | --- |
+| `useLobbyRealtime` | The row, plus `notFound` / `kicked`. |
+| `useGameActions` | Every user-initiated mutation, and the presence subscription. |
+| `useHostPlayback` | Driving the Spotify device from the row (`appliedRef`, the two `wasHost*` refs). |
+| `useRoundLifecycle` | The round clock and the payout (`finalizeRound`, `roundFinalizedRef`). |
+| `useAnswerChime` | The pop sound when one more player answers. |
+
+Children: `GameStage` (the `<main>`), `GameFooter` (controls), `PlayersModal`, `SettingsModal`.
+None of them import from `lib/` — if a control needs a mutation, add it to `useGameActions` and
+pass the handler down.
 
 ---
 
@@ -127,7 +144,7 @@ operation**, `startRound`.
 clock and `music_queue.current` all go out in a single `update`. Two rules hold it together:
 
 - **`current` is derived from `round`, never incremented.** It used to be advanced from
-  `Game.tsx` by *every* client, so N browsers each ran a read-modify-write on `music_queue`
+  the page by *every* client, so N browsers each ran a read-modify-write on `music_queue`
   from their own snapshot — a single stale writer skipped a track (or rewound the queue) for
   everyone, permanently, since the queue holds exactly `totalRounds` items.
 - **Clients never see a half-started round.** This was four sequential writes, so `playing`
@@ -145,16 +162,21 @@ whose system clock is badly skewed sees a skewed countdown. Values are clamped t
 
 **Only the host ends the round.** Scoring reads and rewrites the whole `players` array, so if
 each browser did it they would race each other into clobbering scores. Non-host clients just
-sit at 0 and wait for the realtime update.
+sit at 0 and wait for the realtime update. This lives in `useRoundLifecycle`, gated on
+`isHostPlayer` — the flag alone, since a host without Spotify still owes scoring.
 
 Two things can end a round, and both funnel through `finalizeRound`:
 - the countdown reaching 0
 - every player having answered — no reason to run the clock down
 
-Double-payout is guarded twice: `roundFinalizedRef` on the client, and a `status === Finished`
-check inside `finishRound` (`src/lib/lobbies/gameStateMutations.ts:82`). The ref is deliberately a
-**boolean flag, not a round number** — "relancer la partie" resets `round` to 0, and a remembered
-number would then match the new game's first round and block it from ever ending.
+Double-payout is guarded twice: `roundFinalizedRef` in `useRoundLifecycle`, and a
+`status === Finished` check inside `finishRound`. The ref is deliberately a **boolean flag, not a
+round number** — "relancer la partie" resets `round` to 0, and a remembered number would then match
+the new game's first round and block it from ever ending.
+
+`finalizeRound` keeps **empty `useCallback` deps** and reads the track from `roundTrackRef`. It is a
+dependency of both round-ending effects, so a new identity per queue update would re-run them. The
+ref is not redundant just because `currentTrack` is a hook parameter.
 
 `finishRound` writes scores **and** status in a single update, so the reveal never appears with the
 previous round's points still on screen.
@@ -220,25 +242,44 @@ Two things not to "fix":
 
 **"Host" means two different things** — don't conflate them:
 
-- `isHost` (`Game.tsx:95`) = has the host flag **and** `isSpotifyConnected()`. Gates playback UI.
-- `isHostPlayer` = the flag alone. Gates scoring duties, which must happen whether or not this
-  browser can stream.
+- `isHost` = has the host flag **and** `isSpotifyConnected()`. Gates playback UI.
+- `isHostPlayer` = the flag alone. Gates scoring duties and player management (kick/promote), which
+  must happen whether or not this browser can stream.
+
+Both are derived once in `Game.tsx` and passed down. Deriving `isHost` where `isHostPlayer` belongs
+is the recurring bug here: it once made the "connect Spotify" button unreachable (`isHost &&
+!isSpotifyConnected()` is always false) and gave a lapsed host kick/promote on mobile but not desktop.
 
 **One device per browser tab.** `playerStore.ts` is a module-level singleton read through
 `useSyncExternalStore`, deliberately outliving any single page. Recreating the SDK player per lobby
 used to race Spotify's backend teardown of the previous device and produced spurious
 404 "Device not found" when hosting lobbies back to back.
 
-**Every player pre-warms a device.** `useGameActions` calls `useSpotifyPlayer({ enabled: true })`
-unconditionally, not just for the host. That is intentional: a player who already has a device
-ready resumes instantly on promotion instead of racing Spotify's "not yet controllable" window.
+**Every player pre-warms a device, from exactly one call site.** `Game.tsx` calls
+`useSpotifyPlayer({ enabled: true })` unconditionally and injects the handle into `useGameActions`
+and `useHostPlayback`. Two things matter:
+
+- `enabled: true` for *everyone*, not just the host — a player who already has a device ready
+  resumes instantly on promotion instead of racing Spotify's "not yet controllable" window.
+- Consumers take the **whole memoized handle**. Narrowing it to a `{ pause, resume }` literal at the
+  call site changes identity every render and re-runs the reconciler continuously.
 
 **Playback is a reconciler, not a state machine.** `resolvePlaybackIntent` (`src/lib/playback/`)
-derives what the device should be doing from the lobby row alone — it has no memory. `Game.tsx`
-applies the result and uses `appliedRef` only to avoid re-issuing an identical command. The old
-design read a per-tab ref of the previous status, which a promoted host **never populated** (its
-effect early-returned all game while it wasn't host), so a fresh host acted on beliefs it never
-formed and issued commands its device could not honour.
+derives what the device should be doing from the lobby row alone — it has no memory.
+`useHostPlayback` applies the result and uses `appliedRef` only to avoid re-issuing an identical
+command. The old design read a per-tab ref of the previous status, which a promoted host **never
+populated** (its effect early-returned all game while it wasn't host), so a fresh host acted on
+beliefs it never formed and issued commands its device could not honour.
+
+Two rules inside `useHostPlayback` that look like duplication and are not:
+
+- **`wasHostPlayerRef` and `wasHostWithDeviceRef` track different booleans.** The first keys on
+  `isHostPlayer` (stop the outgoing host's audio, owed even if their token lapsed); the second keys
+  on `isHost`, because it answers "did this client ever populate `appliedRef`?" — and the reconciler
+  early-returns while `!isHost`. Merging them reintroduces the promoted-host bug.
+- **`resolvePlaybackIntent` is called inside the effect body**, using its `Date.now()` default.
+  Hoisting it into a `useMemo`, or feeding it the countdown ticker's `now`, freezes the position at
+  render time and makes a resumed track seek to a stale spot. They are deliberately different clocks.
 
 **Playback commands are serialized, deduped, and superseded** (`player.ts`). Spotify Connect applies
 one command at a time per device and answers an overlapping one with `403 Restriction violated`, so
@@ -298,10 +339,24 @@ attributes (`className='…'`).
 `font-display` / `font-body` families. **Use the tokens, never raw hex.** Opacity modifiers
 (`text-lavender/68`, `bg-lavender/5`) are the house style for surfaces and muted text.
 
-**Shared UI.** Buttons come from `src/components/Button.tsx` (`PrimaryButton`, `SecondaryButton`,
-`PrimaryLink`, `SecondaryLink`) — don't hand-roll one. Icons are inline SVG components in
-`src/components/icons/`. Modals portal into `#modal-root` (declared in `index.html`) and handle
-focus, Escape and scroll-lock themselves.
+Four `@utility` classes in the same file carry the strings that repeat across components — reach
+for these before pasting a long `className`:
+
+| Utility | Where |
+| --- | --- |
+| `glass-panel` | Every bordered translucent surface (answer box, settings panel, scoreboard, avatar strip). |
+| `field-input` | Text/select inputs. **Surface and focus ring only** — padding and font size stay per-site, because 4 of the 5 call sites differ and overriding a custom utility depends on emitted-CSS order, not the order you write the classes. |
+| `field-label` | Form field labels. |
+| `control-shell` | The bordered box around a toggle or slider. |
+
+**Shared UI.** Buttons come from `src/components/Button.tsx`: `PrimaryButton`, `SecondaryButton`,
+and `IconButton` for square icon-only controls (it takes `label` — used as both `aria-label` and
+`title` — plus `icon`). Don't hand-roll one. `DurationSlider` is the shared extract-length control;
+give each call site a distinct `id`. Icons are inline SVG components in `src/components/icons/`.
+
+**Modals** portal into `#modal-root` (declared in `index.html`) and handle focus, Escape and
+scroll-lock themselves. `Modal.tsx` also exports `ModalHeader` (title + close), `ModalBody` (the
+scrolling region) and `ModalCloseButton` — compose those rather than rebuilding the chrome.
 
 **Toasts.** `showToast(text, variant)` from `src/lib/toast.ts`, variants `join | leave | closed | error`.
 
@@ -311,10 +366,11 @@ focus, Escape and scroll-lock themselves.
 
 ## Gotchas
 
-- **The `lib/lobbies` barrel is incomplete.** `index.ts` does *not* re-export `updateGameSettings`,
-  `updatePlayerAnswer` or `promotePlayer`. Those are imported from their modules directly
-  (`../lib/lobbies/gameStateMutations`). Don't assume a function is missing just because it isn't
-  in the barrel.
+- **Import from the `lib/lobbies` barrel.** It re-exports everything callers need, including
+  `promotePlayer`, `updatePlayerAnswer` and `updateGameSettings`. `rowToLobby` and the
+  `rowOperations` helpers stay internal — deep-import those only from inside `lib/lobbies`.
+  `lib/scoring`'s barrel is deliberately narrow (`scoreRound`, `expectedAnswer`,
+  `parseReleaseYear`); the normalizer and points tables are internals.
 
 - **Realtime `postgres_changes` filters evaluate against the NEW row on UPDATE.** A public→private
   toggle would never match `is_public=eq.true`, so `subscribeToPublicLobbies` subscribes to *all*
@@ -324,16 +380,28 @@ focus, Escape and scroll-lock themselves.
   auth — a stale or foreign id is handled by `checkStillMember` in `useLobbyRealtime`, which treats
   "not in the players array" as kicked.
 
-- **`createGameOptions.ts:9`** contains a `"Test"` playlist marked `// remove in production`.
+- **`createGameOptions.ts`** contains a `"Test"` playlist marked `// remove in production`.
+  `TITLE_ONLY_PLAYLISTS` in the same file lists the soundtrack playlists that offer only `Titre`,
+  keyed by playlist id — `filterGameModesForCategory` (`src/util/`) reads it. This replaced two
+  copies of a check against magic indices `musicStyle[3]` / `musicStyle[4]`.
 
-- **Read-modify-write races** — see the lobby row section above. Before adding a mutation, ask
-  which clients can call it concurrently. The queue-advance bug is the cautionary tale: an
-  innocuous `current + 1` in a `useEffect` ran on every client at once.
+- **Read-modify-write races** — see the lobby row section above. `updateLobbyRow`
+  (`lib/lobbies/rowOperations.ts`) removes the boilerplate but **does not** make the write atomic.
+  Before adding a mutation, ask which clients can call it concurrently. The queue-advance bug is the
+  cautionary tale: an innocuous `current + 1` in a `useEffect` ran on every client at once.
 
 - **Don't split a round transition into several writes.** Every `update` is its own realtime
   broadcast, so N writes means N renders on every client, each seeing a partial state.
   `updateRound` / `updateGameQuestion` / `resetPlayerAnswer` were removed for this reason —
   `startRound` replaces all three.
+
+- **`rankPlayers` (`src/util/`) returns the pre-sort index as `toneIndex`.** `PlayerAvatar` picks
+  its gradient from it, so a player keeps the same colour as the standings move. Don't re-derive it
+  by sorting and then `findIndex`-ing back.
+
+- **One pre-existing lint error**, in `LobbyQuestionBox.tsx` (`react-hooks/set-state-in-effect`:
+  clearing the answer on a new round). It predates this refactor; `npm run lint` reporting exactly
+  one problem is the clean baseline.
 
 ---
 
@@ -347,3 +415,8 @@ Two things are unfinished and should **not** be mistaken for bugs:
 - **There is no end-of-game flow.** `totalRounds` is configured, stored and displayed, but nothing
   ends the game when `round` reaches it, and there is no final ranking screen. `TODO.MD` lists
   "Classement final a la fin d'une partie" as outstanding.
+
+One known race is **deliberately left open**: the skip button calls `finishRound` directly without
+setting `roundFinalizedRef`, so a countdown reaching 0 just before the realtime update lands can
+attempt a second payout. Only the server-side `status === Finished` guard stops it, and that is a
+read-then-write. Routing skip through `finalizeRound` would close it.

@@ -8,7 +8,7 @@ interface ToggleFieldProps {
 
 export default function ToggleField({ id, label, checked, onChange, hint }: ToggleFieldProps) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl border border-lavender/14 bg-bg-deep/35 px-4 py-3.5">
+    <div className="flex items-center justify-between gap-4 control-shell">
       <div>
         <label htmlFor={id} className="cursor-pointer text-[0.9rem] font-semibold">
           {label}

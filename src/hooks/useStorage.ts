@@ -34,33 +34,6 @@ class StorageUtility {
 		}
 	}
 
-	static clear(): void {
-		try {
-			localStorage.clear();
-		} catch {
-			/* localStorage unavailable */
-		}
-	}
-
-	static getMultipleItems(
-		keys: Array<StorageKeysType>,
-	): Record<StorageKeysType, unknown> | undefined {
-		try {
-			const result: [string, string | null][] = keys.map((key) => [
-				key,
-				localStorage.getItem(key),
-			]);
-			return result.reduce(
-				(pre, [key, raw]) => ({
-					...pre,
-					[key]: raw ? JSON.parse(raw) : null,
-				}),
-				{} as Record<StorageKeysType, unknown>,
-			);
-		} catch {
-			return undefined;
-		}
-	}
 }
 
 export { StorageUtility, StorageKeys };
