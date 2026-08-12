@@ -21,22 +21,22 @@ export default function PublicLobbyTable({
 	);
 
 	return (
-		<div className="flex flex-col gap-3">
+		<div className="flex flex-col gap-2.5 sm:gap-3">
 			<input
 				type="text"
 				value={search}
 				onChange={(event) => setSearch(event.target.value)}
 				placeholder="Rechercher une partie par nom"
-				className="field-input px-4 py-3 text-[0.9rem]"
+				className="field-input px-3.5 py-2.5 text-[0.85rem] sm:px-4 sm:py-3 sm:text-[0.9rem]"
 			/>
 
-			<div className="max-h-[260px] overflow-y-auto overflow-x-auto rounded-xl border border-lavender/14">
-				<table className="w-full min-w-[420px] border-collapse text-left text-[0.9rem]">
+			<div className="max-h-[180px] overflow-y-auto overflow-x-auto rounded-xl border border-lavender/14 sm:max-h-[260px]">
+				<table className="w-full min-w-[420px] border-collapse text-left text-[0.85rem] sm:text-[0.9rem]">
 					<thead className="sticky top-0 z-10 bg-bg-deep">
-						<tr className="border-b border-lavender/14 text-[0.78rem] text-lavender/44 uppercase">
-							<th className="px-4 py-3 font-medium">Nom</th>
-							<th className="px-4 py-3 font-medium">Catégorie</th>
-							<th className="px-4 py-3 font-medium">Joueurs</th>
+						<tr className="border-b border-lavender/14 text-[0.72rem] text-lavender/44 uppercase sm:text-[0.78rem]">
+							<th className="px-3 py-2.5 font-medium sm:px-4 sm:py-3">Nom</th>
+							<th className="px-3 py-2.5 font-medium sm:px-4 sm:py-3">Catégorie</th>
+							<th className="px-3 py-2.5 font-medium sm:px-4 sm:py-3">Joueurs</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -44,7 +44,7 @@ export default function PublicLobbyTable({
 							<tr>
 								<td
 									colSpan={3}
-									className="px-4 py-6 text-center text-lavender/44"
+									className="px-3 py-5 text-center text-lavender/44 sm:px-4 sm:py-6"
 								>
 									Chargement des parties publiques…
 								</td>
@@ -55,7 +55,7 @@ export default function PublicLobbyTable({
 							<tr>
 								<td
 									colSpan={3}
-									className="px-4 py-6 text-center text-lavender/44"
+									className="px-3 py-5 text-center text-lavender/44 sm:px-4 sm:py-6"
 								>
 									Aucune partie publique pour le moment.
 								</td>
@@ -75,14 +75,14 @@ export default function PublicLobbyTable({
 										}`}
 									>
 										<td
-											className={`px-4 py-3 font-medium ${isSelected ? "text-accent-blue" : ""}`}
+											className={`px-3 py-2.5 font-medium sm:px-4 sm:py-3 ${isSelected ? "text-accent-blue" : ""}`}
 										>
 											{lobby.name}
 										</td>
-										<td className="px-4 py-3 text-lavender/68">
+										<td className="px-3 py-2.5 text-lavender/68 sm:px-4 sm:py-3">
 											{lobby.category.label}
 										</td>
-										<td className="px-4 py-3 text-lavender/68">
+										<td className="px-3 py-2.5 text-lavender/68 sm:px-4 sm:py-3">
 											{lobby.players.length}
 										</td>
 									</tr>

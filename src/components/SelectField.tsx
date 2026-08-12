@@ -23,7 +23,7 @@ export default function SelectField({
   ...props
 }: SelectFieldProps) {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1.5 sm:gap-2">
       <label htmlFor={id} className="field-label">
         {label}{" "}
         {optional && <span className="font-normal text-lavender/44">(optionnel)</span>}
@@ -32,7 +32,7 @@ export default function SelectField({
         <select
           id={id}
           name={id}
-          className="field-input px-4 py-3.5 text-[0.95rem] appearance-none pr-11"
+          className="field-input px-3.5 py-3 text-[0.9rem] appearance-none pr-10 sm:px-4 sm:py-3.5 sm:text-[0.95rem] sm:pr-11"
           {...props}
         >
           {options.map((option) => (
@@ -41,7 +41,7 @@ export default function SelectField({
             </option>
           ))}
         </select>
-        <span className="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-lavender/68">
+        <span className="pointer-events-none absolute top-1/2 right-3.5 -translate-y-1/2 text-lavender/68 sm:right-4">
           <IconChevronDown />
         </span>
       </div>

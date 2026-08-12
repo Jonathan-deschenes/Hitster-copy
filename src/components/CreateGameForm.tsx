@@ -41,7 +41,7 @@ export default function CreateGameForm() {
 
 	return (
 		<form
-			className='flex flex-col gap-5'
+			className='flex flex-col gap-3.5 sm:gap-5'
 			onSubmit={(event) => handleSubmit(event)}
 		>
 			<TextField

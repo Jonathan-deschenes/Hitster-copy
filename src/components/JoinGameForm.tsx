@@ -27,7 +27,7 @@ export default function JoinGameForm() {
 	} = useJoinGameForm();
 
 	return (
-		<div className='flex flex-col gap-5'>
+		<div className='flex flex-col gap-3.5 sm:gap-5'>
 			<TextField
 				id='player-name'
 				label='Pseudo'
@@ -38,7 +38,7 @@ export default function JoinGameForm() {
 				autoComplete='off'
 			/>
 
-			<div className='flex items-end gap-3'>
+			<div className='flex items-end gap-2.5 sm:gap-3'>
 				<div className='flex-1'>
 					<TextField
 						id='lobby-code'
@@ -59,7 +59,7 @@ export default function JoinGameForm() {
 				</SecondaryButton>
 			</div>
 
-			<div className='flex min-h-0 flex-1 flex-col gap-3'>
+			<div className='flex min-h-0 flex-1 flex-col gap-2.5 sm:gap-3'>
 				<span className='field-label'>Parties publiques</span>
 				<PublicLobbyTable
 					lobbies={publicLobbies}
@@ -72,7 +72,7 @@ export default function JoinGameForm() {
 			{selectedLobbyRow && (
 				<form
 					onSubmit={handleJoin}
-					className='flex flex-col gap-5 rounded-2xl border border-lavender/14 bg-lavender/[0.04] p-5'
+					className='flex flex-col gap-3.5 rounded-2xl border border-lavender/14 bg-lavender/[0.04] p-4 sm:gap-5 sm:p-5'
 				>
 					<p className='text-[0.9rem]'>
 						Rejoindre{" "}

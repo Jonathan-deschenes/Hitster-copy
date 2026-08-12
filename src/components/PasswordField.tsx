@@ -47,7 +47,7 @@ export default function PasswordField({
 	const [show, setShow] = useState(false);
 
 	return (
-		<div className='flex flex-col gap-2'>
+		<div className='flex flex-col gap-1.5 sm:gap-2'>
 			<label htmlFor={id} className='field-label'>
 				{label}{" "}
 			</label>
@@ -58,7 +58,7 @@ export default function PasswordField({
 					type={show ? "text" : "password"}
 					placeholder='Lorem ipsum'
 					autoComplete='new-password'
-					className='field-input py-3.5 pr-11 pl-4 text-[0.95rem]'
+					className='field-input py-3 pr-10 pl-3.5 text-[0.9rem] sm:py-3.5 sm:pr-11 sm:pl-4 sm:text-[0.95rem]'
 					{...props}
 				/>
 				<button

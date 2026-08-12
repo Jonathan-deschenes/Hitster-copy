@@ -128,7 +128,7 @@ export default function Modal({
 
 	return createPortal(
 		<div
-			className='fixed inset-0 z-50 flex items-center justify-center bg-bg-deep/70 p-4 backdrop-blur-sm transition-opacity duration-180 ease-out'
+			className='fixed inset-0 z-50 flex items-center justify-center bg-bg-deep/70 p-3 backdrop-blur-sm transition-opacity duration-180 ease-out sm:p-4'
 			style={{ opacity: visible ? 1 : 0 }}
 			onClick={(event) => {
 				if (event.target === event.currentTarget) onClose();
