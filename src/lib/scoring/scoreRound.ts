@@ -1,6 +1,6 @@
 import { GameMode } from "../../types";
 import type { GameModeEnum, musicItemsProps, playerProps } from "../../types";
-import { isTextMatch } from "./normalize";
+import { isTextMatch, isTitleMatch } from "./normalize";
 import {
 	decadeOf,
 	parseAnswerDecade,
@@ -143,9 +143,16 @@ export function scoreRound(
 			? (track.artist ?? [])
 			: [expectedAnswer(track, questionMode)];
 
+	// Titre grades against the album, which routinely tacks a subtitle or
+	// numeral onto the franchise name — tolerate a correct, shorter answer
+	// there. Musique/Artiste keep the stricter match: a bare first word
+	// shouldn't count as the whole song or artist name.
+	const matchesTarget =
+		questionMode === GameMode.Titre ? isTitleMatch : isTextMatch;
+
 	for (const player of players) {
 		const matched = targets.some((target) =>
-			isTextMatch(player.answer, target),
+			matchesTarget(player.answer, target),
 		);
 		if (matched) results[player.id] = { points, correct: true };
 	}
