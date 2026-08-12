@@ -26,7 +26,7 @@
 
 [X] Implémenter prise réponse des joueurs  
 [X] Systeme de pointage  
-[ ] Classement final a la fin d'une partie
+[X] Classement final a la fin d'une partie
 
 ## Connexion Spotify
 

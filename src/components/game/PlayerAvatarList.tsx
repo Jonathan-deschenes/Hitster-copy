@@ -5,14 +5,18 @@ import { rankPlayers } from "../../util";
 interface PlayerAvatarListProps {
 	players: playerProps[];
 	currentPlayerId?: string | null;
+	className?: string;
 }
 
 export default function PlayerAvatarList({
 	players,
 	currentPlayerId,
+	className = "",
 }: PlayerAvatarListProps) {
 	return (
-		<ul className='glass-panel flex max-w-full justify-center gap-6 overflow-x-auto px-6 py-4'>
+		<ul
+			className={`glass-panel flex flex-wrap max-w-full justify-center gap-6 overflow-x-auto px-6 py-4 ${className}`}
+		>
 			{rankPlayers(players).map(({ player, rank, toneIndex }) => (
 				<li
 					key={player.id}

@@ -37,6 +37,8 @@ export const GameStatus = {
 	Playing: "playing",
 	Paused: "paused",
 	Finished: "finished",
+	/** Every round has been played — the final standings are on screen. */
+	Ended: "ended",
 } as const;
 
 export const GameMode = {

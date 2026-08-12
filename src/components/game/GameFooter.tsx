@@ -8,7 +8,11 @@ import {
 	IconSkip,
 	IconUsers,
 } from "../icons/GameIcons";
-import { GameStatus, type GameStateEnum, type gameStateProps } from "../../types";
+import {
+	GameStatus,
+	type GameStateEnum,
+	type gameStateProps,
+} from "../../types";
 
 interface GameFooterProps {
 	gameState?: gameStateProps;
@@ -17,6 +21,8 @@ interface GameFooterProps {
 	/** Host flag alone. A host without Spotify is the one who needs to connect. */
 	isHostPlayer: boolean;
 	hostActionByStatus: Record<GameStateEnum, () => void>;
+	/** Last round of the game — relabels the host action, see `HostActionButton`. */
+	isFinalRound: boolean;
 	volume: number;
 	onVolumeChange: (volume: number) => void;
 	onLeave: () => void;
@@ -32,6 +38,7 @@ export default function GameFooter({
 	isHost,
 	isHostPlayer,
 	hostActionByStatus,
+	isFinalRound,
 	volume,
 	onVolumeChange,
 	onLeave,
@@ -44,6 +51,9 @@ export default function GameFooter({
 	const status = gameState?.status;
 	const roundInFlight =
 		status === GameStatus.Playing || status === GameStatus.Paused;
+	// The podium owns the "nouvelle partie" call to action once the game is over,
+	// so the footer stays out of its way.
+	const gameOver = status === GameStatus.Ended;
 
 	return (
 		<footer className='relative z-10 flex flex-col items-end gap-3 px-4 pt-2 pb-4 sm:px-12 lg:grid lg:grid-cols-[1fr_auto_1fr] lg:gap-4'>
@@ -59,9 +69,10 @@ export default function GameFooter({
 				{/* A host whose Spotify isn't connected is exactly who needs this. */}
 				{isHostPlayer && !isHost && <ConnectSpotifyButton />}
 
-				{gameState && isHost && (
+				{gameState && isHost && !gameOver && (
 					<HostActionButton
 						status={gameState.status}
+						isFinalRound={isFinalRound}
 						onClick={hostActionByStatus[gameState.status]}
 					/>
 				)}
@@ -74,7 +85,7 @@ export default function GameFooter({
 					/>
 				)}
 
-				{gameState && isHost && (
+				{gameState && isHost && !gameOver && (
 					<IconButton
 						label='Relancer la partie'
 						icon={<IconRefresh />}
@@ -83,7 +94,7 @@ export default function GameFooter({
 				)}
 
 				<div className='flex gap-4'>
-					{isHost && (
+					{isHost && !gameOver && (
 						<SpotifyVolumeControl volume={volume} onChange={onVolumeChange} />
 					)}
 					{canOpenPlayers && (

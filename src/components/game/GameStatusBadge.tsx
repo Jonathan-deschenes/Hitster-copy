@@ -30,6 +30,11 @@ const STATUS_META: Record<
 		icon: <IconTrophy />,
 		badgeClass: "border-purple-soft/50 bg-purple/15 text-purple-soft",
 	},
+	[GameStatus.Ended]: {
+		label: "Partie terminée",
+		icon: <IconTrophy />,
+		badgeClass: "border-[#ffd76a]/45 bg-[#ffd76a]/10 text-[#ffd76a]",
+	},
 };
 
 interface GameStatusBadgeProps {

@@ -38,6 +38,9 @@ export function resolvePlaybackIntent(
 		case GameStatus.Finished:
 			return { kind: "idle" };
 
+		// Unlike `Finished`, the game is over for good: nothing is left to guess,
+		// so the track stops instead of playing on under the standings.
+		case GameStatus.Ended:
 		case GameStatus.Paused:
 		case GameStatus.Waiting:
 			return { kind: "pause" };

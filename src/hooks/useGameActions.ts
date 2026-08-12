@@ -12,9 +12,14 @@ import {
 	startRound,
 	subscribeToLobbyPresence,
 	updateGameSettings,
+	updateGameStatus,
 	updatePlayerAnswer,
 } from "../lib/lobbies";
-import { pickRandomOtherPlayer, pickSuccessorPlayer } from "../util";
+import {
+	isFinalRound,
+	pickRandomOtherPlayer,
+	pickSuccessorPlayer,
+} from "../util";
 import type { spotifyPlayerHandleProps } from "./useSpotifyPlayer";
 
 interface UseGameActionsParams {
@@ -135,6 +140,12 @@ export function useGameActions({
 		await startRound(code);
 	}
 
+	/** The last round has been revealed — move everyone to the final standings. */
+	async function handleEndGame() {
+		if (!code) return;
+		await updateGameStatus(code, GameStatus.Ended);
+	}
+
 	async function handlePauseGame() {
 		if (!code) return;
 		await pauseRound(code);
@@ -145,11 +156,19 @@ export function useGameActions({
 		await resumeRound(code);
 	}
 
+	// There is no round after the last one — the queue holds exactly
+	// `totalRounds` items and `startRound` would just replay the final track.
+	const finalRound = isFinalRound(
+		lobby?.game_state,
+		lobby?.music_queue?.items.length,
+	);
+
 	const hostActionByStatus: Record<GameStateEnum, () => void> = {
 		[GameStatus.Waiting]: handleStartGame,
 		[GameStatus.Playing]: handlePauseGame,
 		[GameStatus.Paused]: handleResumeGame,
-		[GameStatus.Finished]: handleNewRound,
+		[GameStatus.Finished]: finalRound ? handleEndGame : handleNewRound,
+		[GameStatus.Ended]: handleRestartGame,
 	};
 
 	async function handlePlayerAnswer(answer: string, playerId: string) {
@@ -181,6 +200,7 @@ export function useGameActions({
 
 	return {
 		currentPlayer,
+		finalRound,
 		handleLeaving,
 		handlePlayerKick,
 		handlePlayerPromotion,

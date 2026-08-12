@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { SetStateAction } from "react";
 import type { lobbyProps } from "../../types";
 import { IconPlus, IconSettings } from "../icons/GameIcons";
@@ -7,23 +6,29 @@ import LobbySettings from "./LobbySettings";
 interface LobbySettingsPanelProps {
 	lobby: lobbyProps;
 	className?: string;
+	/**
+	 * Controlled by `GameStage`, not held here: the question box below shrinks
+	 * while the settings are expanded, so both need to read the same flag.
+	 */
+	isOpen: boolean;
+	onOpenChange: React.Dispatch<SetStateAction<boolean>>;
 	mobileMenuClose: React.Dispatch<SetStateAction<boolean>>;
 }
 
 export default function LobbySettingsPanel({
 	lobby,
 	className = "",
+	isOpen,
+	onOpenChange,
 	mobileMenuClose,
 }: LobbySettingsPanelProps) {
-	const [isOpen, setIsOpen] = useState(false);
-
 	return (
 		<div
 			className={`flex w-full max-w-md flex-col glass-panel ${isOpen ? "min-h-0 flex-1" : "h-fit shrink-0"} ${className}`}
 		>
 			<button
 				type='button'
-				onClick={() => setIsOpen((open) => !open)}
+				onClick={() => onOpenChange((open) => !open)}
 				aria-expanded={isOpen}
 				className={`flex shrink-0 items-center justify-between gap-2 ${isOpen ? "mb-4" : ""}`}
 			>
@@ -42,7 +47,7 @@ export default function LobbySettingsPanel({
 					<LobbySettings
 						lobby={lobby}
 						mobileMenuClose={mobileMenuClose}
-						desktopMenuClose={setIsOpen}
+						desktopMenuClose={onOpenChange}
 					/>
 				</div>
 			)}

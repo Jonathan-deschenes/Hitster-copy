@@ -63,3 +63,53 @@ alter table public.spotify_catalog_token enable row level security;
 -- fetching/shuffling its own copy from Spotify.
 alter table public.lobbies
   add column if not exists music_queue jsonb not null default '{"items":[],"current":0}'::jsonb;
+
+-- ---------------------------------------------------------------------------
+-- Scheduled cleanup of abandoned lobbies
+-- ---------------------------------------------------------------------------
+-- The app already deletes a lobby when the host leaves with nobody to hand it
+-- to (resolveHostDeparture), and Supabase presence catches closed tabs and
+-- crashes. What neither can cover is the *last* connected client disappearing
+-- ungracefully: presence "leave" events are only observed by the other
+-- clients, so with nobody left in the lobby, nothing deletes the row. Such a
+-- row keeps a fully populated `players` array -- it is abandoned, not empty --
+-- which is why this sweeps on age rather than on emptiness, and why it has to
+-- run in the database rather than in a client.
+--
+-- 24h is well past any real game. A client still sitting in a swept lobby
+-- degrades gracefully: replica identity full is set above, so the DELETE
+-- reaches subscribeToLobbyByCode and the player is sent home with a toast.
+
+-- Also available from the dashboard: Database > Extensions > pg_cron.
+create extension if not exists pg_cron;
+
+create or replace function public.delete_stale_lobbies()
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  removed integer;
+begin
+  delete from public.lobbies
+  where created_at < now() - interval '24 hours';
+
+  get diagnostics removed = row_count;
+  return removed;
+end;
+$$;
+
+-- PostgREST exposes public functions as RPC, and this one is security definer:
+-- keep it off the anon key.
+revoke all on function public.delete_stale_lobbies() from public, anon, authenticated;
+
+-- Hourly, not every few minutes: with a 24h TTL a tighter cadence only changes
+-- which minute of the day a row dies, and costs a job run every time.
+-- cron.schedule upserts by name, so re-running this file is safe.
+-- To remove it: select cron.unschedule('delete-stale-lobbies');
+select cron.schedule(
+  'delete-stale-lobbies',
+  '17 * * * *',
+  $$select public.delete_stale_lobbies()$$
+);

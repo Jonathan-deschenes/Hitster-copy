@@ -72,6 +72,16 @@ export function subscribeToLobbyByCode(
 	};
 }
 
+// A page refresh closes the websocket and reopens a new one a moment later,
+// which looks identical to a real disconnect from the presence channel's
+// point of view. Holding the leave for this long before acting on it gives
+// the reload time to reconnect and re-track under the same key. The reload
+// has to redo the whole pipeline from scratch — reload the JS bundle,
+// reconnect the websocket, rejoin the presence channel, `track()` again —
+// which routinely runs past a couple of seconds (worse in dev, where the
+// bundle isn't pre-built), so this is deliberately generous.
+const PRESENCE_LEAVE_GRACE_MS = 15000;
+
 /**
  * Tracks the current player's presence on a per-lobby channel and reports
  * when another tracked player's socket disconnects (tab closed, crash,
@@ -88,9 +98,42 @@ export function subscribeToLobbyPresence(
 		config: { presence: { key: playerId } },
 	});
 
+	// Leaves are held here until the grace period elapses; a `join` with the
+	// same key (the reconnect after a refresh) cancels the pending one.
+	const pendingLeaves = new Map<string, ReturnType<typeof setTimeout>>();
+
 	channel
 		.on("presence", { event: "leave" }, ({ key }) => {
-			onPlayerLeave(key);
+			// A reload's reconnect can be observed by the server *before* it
+			// notices the old connection is gone — `join` then arrives ahead of
+			// the `leave` that describes the connection it replaced. Phoenix
+			// presence keeps one meta entry per underlying connection under a
+			// key, so if the key is still present here, some connection for it
+			// is already back and this `leave` is stale: ignore it outright
+			// instead of arming a timer nothing will ever cancel.
+			if (key in channel.presenceState()) return;
+
+			const existing = pendingLeaves.get(key);
+			if (existing) clearTimeout(existing);
+
+			pendingLeaves.set(
+				key,
+				setTimeout(() => {
+					pendingLeaves.delete(key);
+					// Re-check again at fire time in case the reconnect landed
+					// after this timer was armed but wasn't caught by the `join`
+					// listener below for some reason.
+					if (key in channel.presenceState()) return;
+					onPlayerLeave(key);
+				}, PRESENCE_LEAVE_GRACE_MS),
+			);
+		})
+		.on("presence", { event: "join" }, ({ key }) => {
+			const pending = pendingLeaves.get(key);
+			if (pending) {
+				clearTimeout(pending);
+				pendingLeaves.delete(key);
+			}
 		})
 		.subscribe((status) => {
 			if (status === "SUBSCRIBED") {
@@ -99,6 +142,7 @@ export function subscribeToLobbyPresence(
 		});
 
 	return () => {
+		for (const timeout of pendingLeaves.values()) clearTimeout(timeout);
 		supabase.removeChannel(channel);
 	};
 }

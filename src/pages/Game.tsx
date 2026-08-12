@@ -16,6 +16,7 @@ import { useHostPlayback } from "../hooks/useHostPlayback";
 import { useRoundLifecycle } from "../hooks/useRoundLifecycle";
 import { useAnswerChime } from "../hooks/useAnswerChime";
 import GameStage from "../components/game/GameStage";
+import PodiumStage from "../components/game/PodiumStage";
 import GameFooter from "../components/game/GameFooter";
 import PlayersModal from "../components/game/PlayersModal";
 import SettingsModal from "../components/game/SettingsModal";
@@ -43,6 +44,7 @@ export default function Game() {
 
 	const {
 		currentPlayer,
+		finalRound,
 		handleLeaving,
 		handlePlayerKick,
 		handlePlayerPromotion,
@@ -110,41 +112,65 @@ export default function Game() {
 
 	const status = gameState?.status;
 
+	// The host asked for a fresh game: same lobby, scores wiped, back to
+	// `waiting` so they can retune the settings before starting again.
+	async function handleNewGame() {
+		await handleRestartGame();
+	}
+
 	return (
 		<PageBackground>
 			<TopBar />
 
-			<GameStage
-				lobby={lobby}
-				currentPlayerId={current}
-				gameState={gameState}
-				currentTrack={currentTrack}
-				counter={counter}
-				showCounter={
-					status === GameStatus.Playing || status === GameStatus.Paused
-				}
-				isHost={isHost}
-				canManagePlayers={isHostPlayer}
-				onSettingsOpenChange={setSettingsOpen}
-				answerAction={handlePlayerAnswer}
-				kickAction={handlePlayerKick}
-				promotionAction={handlePlayerPromotion}
-			/>
+			{/* Mobile scrolls the stage *and* the footer together — no phone fits
+			    the whole round, and the quit button has to stay reachable.
+			    `lg:contents` dissolves this wrapper on desktop, where the columns
+			    scroll on their own inside a locked viewport. */}
+			<div className='flex min-h-0 flex-1 flex-col overflow-y-auto lg:contents'>
+				{status === GameStatus.Ended ? (
+					<PodiumStage
+						players={lobby.player}
+						currentPlayerId={current}
+						gameState={gameState}
+						categoryLabel={lobby.category?.label}
+						isHostPlayer={isHostPlayer}
+						onNewGame={handleNewGame}
+					/>
+				) : (
+					<GameStage
+						lobby={lobby}
+						currentPlayerId={current}
+						gameState={gameState}
+						currentTrack={currentTrack}
+						counter={counter}
+						showCounter={
+							status === GameStatus.Playing || status === GameStatus.Paused
+						}
+						isHost={isHost}
+						canManagePlayers={isHostPlayer}
+						onSettingsOpenChange={setSettingsOpen}
+						answerAction={handlePlayerAnswer}
+						kickAction={handlePlayerKick}
+						promotionAction={handlePlayerPromotion}
+					/>
+				)}
 
-			<GameFooter
-				gameState={gameState}
-				isHost={isHost}
-				isHostPlayer={isHostPlayer}
-				hostActionByStatus={hostActionByStatus}
-				volume={spotifyPlayer.volume}
-				onVolumeChange={spotifyPlayer.setVolume}
-				onLeave={handleLeaving}
-				onSkipTrack={handleSkipTrack}
-				onRestartGame={handleRestartGame}
-				onOpenPlayers={() => setManageOpen(true)}
-				onOpenSettings={() => setSettingsOpen(true)}
-				canOpenPlayers={!!currentPlayer}
-			/>
+				<GameFooter
+					gameState={gameState}
+					isHost={isHost}
+					isHostPlayer={isHostPlayer}
+					hostActionByStatus={hostActionByStatus}
+					isFinalRound={finalRound}
+					volume={spotifyPlayer.volume}
+					onVolumeChange={spotifyPlayer.setVolume}
+					onLeave={handleLeaving}
+					onSkipTrack={handleSkipTrack}
+					onRestartGame={handleRestartGame}
+					onOpenPlayers={() => setManageOpen(true)}
+					onOpenSettings={() => setSettingsOpen(true)}
+					canOpenPlayers={!!currentPlayer}
+				/>
+			</div>
 
 			<PlayersModal
 				open={manageOpen}

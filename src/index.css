@@ -16,6 +16,7 @@
 	--animate-drift-b: drift-b 22s ease-in-out infinite;
 	--animate-drift-a-rev: drift-a 26s ease-in-out infinite reverse;
 	--animate-pulse-glow: pulse-glow 2.2s ease-in-out infinite;
+	--animate-podium-rise: podium-rise 0.5s ease-out both;
 }
 
 /* Class strings that were repeated verbatim across 3+ components. Compose
@@ -47,6 +48,17 @@
 	}
 	50% {
 		box-shadow: 0 40px 90px -14px rgba(71, 191, 255, 0.65);
+	}
+}
+
+@keyframes podium-rise {
+	from {
+		opacity: 0;
+		transform: translateY(24px) scale(0.96);
+	}
+	to {
+		opacity: 1;
+		transform: none;
 	}
 }
 

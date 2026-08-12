@@ -1,3 +1,4 @@
+import { useState } from "react";
 import LobbyHeaderBadges from "./LobbyHeaderBadges";
 import AlbumArtPanel from "./AlbumArtPanel";
 import ScoreboardPanel from "./ScoreboardPanel";
@@ -6,6 +7,7 @@ import LobbyQuestionBox from "./LobbyQuestionBox";
 import GameStatusBadge from "./GameStatusBadge";
 import PlayerAvatarList from "./PlayerAvatarList";
 import { DEFAULT_QUESTION } from "../../constants/createGameOptions";
+import { GameStatus } from "../../types";
 import type { gameStateProps, lobbyProps, musicItemsProps } from "../../types";
 
 interface GameStageProps {
@@ -40,17 +42,37 @@ export default function GameStage({
 	kickAction,
 	promotionAction,
 }: GameStageProps) {
+	// Mobile shows the answer box (or, once revealed, the round result) in place
+	// of the avatar strip: both don't fit above the album art. `waiting` keeps
+	// the strip — that's the lobby view, where seeing who joined is the point.
+	const status = gameState?.status;
+	const showAnswerBox =
+		status === GameStatus.Playing ||
+		status === GameStatus.Paused ||
+		status === GameStatus.Finished;
+
+	// Lives here rather than inside the panel: expanding the settings puts the
+	// question box below into its compact form, so the two share the flag and
+	// the settings get the height they need.
+	const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
+
+	// No `min-h-0` on mobile: the stage takes its content's height and the page
+	// scroller in `Game.tsx` handles the overflow. Desktop keeps it, so the three
+	// columns scroll inside a locked viewport instead.
 	return (
-		<main className='relative z-10 flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-4 px-4 py-2 sm:px-8 lg:px-12'>
-			<div className='flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-6 lg:grid lg:grid-cols-[1fr_auto_1fr] lg:items-stretch lg:content-stretch'>
+		<main className='relative z-10 flex w-full flex-1 flex-col items-center gap-4 px-4 py-2 sm:px-8 lg:min-h-0 lg:justify-center lg:px-12'>
+			<div className='my-auto flex w-full flex-1 flex-col items-center justify-center gap-6 lg:my-0 lg:grid lg:min-h-0 lg:grid-cols-[1fr_auto_1fr] lg:items-stretch lg:content-stretch'>
 				<div className='hidden min-h-0 lg:flex lg:flex-col lg:gap-4'>
 					{isHost && (
 						<LobbySettingsPanel
 							lobby={lobby}
+							isOpen={settingsPanelOpen}
+							onOpenChange={setSettingsPanelOpen}
 							mobileMenuClose={onSettingsOpenChange}
 						/>
 					)}
 					<LobbyQuestionBox
+						compact={isHost && settingsPanelOpen}
 						question={gameState?.question ?? DEFAULT_QUESTION}
 						answerAction={answerAction}
 						currentPlayer={currentPlayerId}
@@ -60,13 +82,30 @@ export default function GameStage({
 					/>
 				</div>
 
-				<div className='relative flex flex-col shrink-0 gap-y-4 items-center justify-center'>
+				<div className='relative flex w-full max-w-md flex-col shrink-0 gap-y-4 items-center justify-center lg:w-auto lg:max-w-none'>
 					<LobbyHeaderBadges
 						name={lobby.name}
 						code={lobby.generatedCode}
 						isPublic={lobby.public}
 					/>
-					<div className='relative w-full h-fit'>
+
+					{showAnswerBox && (
+						<LobbyQuestionBox
+							className='lg:hidden'
+							compact
+							inputId='lobby-question-answer-mobile'
+							question={gameState?.question ?? DEFAULT_QUESTION}
+							answerAction={answerAction}
+							currentPlayer={currentPlayerId}
+							gameState={gameState}
+							players={lobby.player}
+							currentTrack={currentTrack}
+						/>
+					)}
+
+					{/* The panel is a fixed width, so it needs centring now that the
+					    column is full-width on mobile. */}
+					<div className='relative flex w-full h-fit justify-center'>
 						{/* Keyed so a new track remounts the reveal animation. */}
 						<AlbumArtPanel
 							key={currentTrack?.id}
@@ -84,6 +123,7 @@ export default function GameStage({
 						<PlayerAvatarList
 							players={lobby.player}
 							currentPlayerId={currentPlayerId}
+							className={showAnswerBox ? "hidden lg:flex" : ""}
 						/>
 					</div>
 				</div>

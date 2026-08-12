@@ -78,9 +78,9 @@ and renders four children — nothing else. Each hook owns one concern and one s
 | `useRoundLifecycle` | The round clock and the payout (`finalizeRound`, `roundFinalizedRef`). |
 | `useAnswerChime` | The pop sound when one more player answers. |
 
-Children: `GameStage` (the `<main>`), `GameFooter` (controls), `PlayersModal`, `SettingsModal`.
-None of them import from `lib/` — if a control needs a mutation, add it to `useGameActions` and
-pass the handler down.
+Children: `GameStage` (the `<main>`, swapped for `PodiumStage` once the game is `ended`),
+`GameFooter` (controls), `PlayersModal`, `SettingsModal`. None of them import from `lib/` — if a
+control needs a mutation, add it to `useGameActions` and pass the handler down.
 
 ---
 
@@ -128,10 +128,14 @@ only by the Edge Function's service-role key.
 
 ```
 waiting  ──start──►  playing  ◄──resume/pause──►  paused
-                        │
-                     round ends
-                        ▼
-                    finished  ──new round──►  playing
+   ▲                    │
+   │                 round ends
+   │                    ▼
+   │                finished  ──new round──►  playing
+   │                    │
+   │              (that was the last round)
+   │                    ▼
+   └──nouvelle partie── ended
 ```
 
 The status lives in `game_state.status` (`GameStatus` in `src/types/index.ts`).
@@ -139,6 +143,22 @@ The status lives in `game_state.status` (`GameStatus` in `src/types/index.ts`).
 **Host presses a button** → `hostActionByStatus` (`src/hooks/useGameActions.ts`) maps the
 current status to a handler. Starting the game and starting the next round are the **same
 operation**, `startRound`.
+
+**`finished` on the last round leads to `ended`, not to another round.** `isFinalRound`
+(`src/util/index.ts`) answers "was that the last one?", and `hostActionByStatus` swaps
+`startRound` for a write of `GameStatus.Ended`; `HostActionButton` relabels itself "Voir le
+classement final". Without that swap `startRound` would run past the end of the queue and
+`current = Math.min(round, items.length - 1)` would replay the final track forever. The check is
+bounded by the **queue length as well as `totalRounds`**, for the case where the playlist yielded
+fewer tracks than the host asked for.
+
+`ended` is a status in the row rather than local state precisely because every client has to reach
+the podium together; nothing else can write it, so `useLobbyRealtime`'s "back to `waiting` means a
+restart" assumption still holds. It resolves to the **`pause`** intent — unlike `finished`, the
+game is over and the music should stop. `Game.tsx` renders `PodiumStage` instead of `GameStage`
+while it is set, and `GameFooter` withholds both the host action and "relancer la partie" so the
+podium owns the single call to action. That button is gated on **`isHostPlayer`**: restarting
+writes settings, it is not playback.
 
 **`startRound` is one atomic write.** Cleared answers, the question, `round`, `status`, the round
 clock and `music_queue.current` all go out in a single `update`. Two rules hold it together:
@@ -395,6 +415,25 @@ scrolling region) and `ModalCloseButton` — compose those rather than rebuildin
   `updateRound` / `updateGameQuestion` / `resetPlayerAnswer` were removed for this reason —
   `startRound` replaces all three.
 
+- **`LobbyQuestionBox` is mounted twice, and that is on purpose.** The desktop copy lives in the
+  `hidden lg:flex` left column; a second `compact` copy sits above the album art under `lg:hidden`,
+  because the left column simply does not render on a phone and mobile players had no way to
+  answer at all. Both are in the DOM at once, so each call site passes its own `inputId` — don't
+  let them share one. `GameStage` hides `PlayerAvatarList` on mobile for exactly the statuses where
+  the answer box shows (`playing` / `paused` / `finished`); the two don't fit above the cover, and
+  `waiting` keeps the strip since that's the lobby view. `compact` is not a mobile flag — the
+  desktop copy takes it too while the settings panel is expanded, which is why
+  `LobbySettingsPanel` is **controlled** from `GameStage` rather than holding its own `isOpen`.
+
+- **Mobile scrolls the stage and the footer together.** No phone fits a whole round, so `Game.tsx`
+  wraps the stage and `GameFooter` in one `overflow-y-auto` column — the "Quitter la partie" button
+  scrolls into view rather than being pinned over the content. That wrapper is `lg:contents`, which
+  dissolves it on desktop so `main` and `footer` are direct children of `PageBackground` again;
+  correspondingly the stages carry `lg:min-h-0`, not `min-h-0`, since on mobile they must take
+  their content's height and let the wrapper scroll. `PageBackground` stays `h-dvh
+  overflow-hidden` at every width — it clips the drifting background blobs, and letting *it*
+  scroll would make their negative offsets part of the scrollable area.
+
 - **`rankPlayers` (`src/util/`) returns the pre-sort index as `toneIndex`.** `PlayerAvatar` picks
   its gradient from it, so a player keeps the same colour as the standings move. Don't re-derive it
   by sorting and then `findIndex`-ing back.
@@ -409,12 +448,9 @@ scrolling region) and `ModalCloseButton` — compose those rather than rebuildin
 
 `TODO.MD` is the live roadmap — check it rather than trusting this section to stay current.
 
-Two things are unfinished and should **not** be mistaken for bugs:
+One thing is unfinished and should **not** be mistaken for a bug:
 
 - **`Album` mode awards no points** (deliberately absent from `MODE_POINTS`).
-- **There is no end-of-game flow.** `totalRounds` is configured, stored and displayed, but nothing
-  ends the game when `round` reaches it, and there is no final ranking screen. `TODO.MD` lists
-  "Classement final a la fin d'une partie" as outstanding.
 
 One known race is **deliberately left open**: the skip button calls `finishRound` directly without
 setting `roundFinalizedRef`, so a countdown reaching 0 just before the realtime update lands can

@@ -2,6 +2,7 @@ import {
 	GameMode,
 	type gameCategoryProps,
 	type GameModeEnum,
+	type gameStateProps,
 	type playerProps,
 } from "../types";
 import {
@@ -21,6 +22,27 @@ export function rankPlayers(players: playerProps[]) {
 		.map((player, toneIndex) => ({ player, toneIndex }))
 		.sort((a, b) => (b.player.score ?? 0) - (a.player.score ?? 0))
 		.map((entry, index) => ({ ...entry, rank: index + 1 }));
+}
+
+/**
+ * Whether the round in `game_state` is the last one the game will play — the
+ * host's "manche suivante" becomes "classement final" from here.
+ *
+ * The queue length bounds it too: a playlist that yielded fewer tracks than
+ * `totalRounds` would otherwise replay its last track forever, since
+ * `startRound` clamps `current` to the queue.
+ */
+export function isFinalRound(
+	gameState?: gameStateProps,
+	queueLength?: number,
+): boolean {
+	if (!gameState) return false;
+
+	const lastRound = queueLength
+		? Math.min(gameState.totalRounds, queueLength)
+		: gameState.totalRounds;
+
+	return gameState.round + 1 >= lastRound;
 }
 
 export function playerDisplayName(pseudo: string, isYou = false) {
