@@ -121,11 +121,6 @@ export default function Game() {
 	return (
 		<PageBackground>
 			<TopBar />
-
-			{/* Mobile scrolls the stage *and* the footer together — no phone fits
-			    the whole round, and the quit button has to stay reachable.
-			    `lg:contents` dissolves this wrapper on desktop, where the columns
-			    scroll on their own inside a locked viewport. */}
 			<div className='flex min-h-0 flex-1 flex-col overflow-y-auto lg:contents'>
 				{status === GameStatus.Ended ? (
 					<PodiumStage

@@ -31,23 +31,27 @@ export default function AlbumArtPanel({
 						: "border-lavender/14 bg-[linear-gradient(160deg,rgba(237,230,255,0.08),rgba(8,6,13,0.5))] shadow-[0_40px_80px_-20px_rgba(126,20,255,0.5)]"
 				}`}
 			>
-				{coverImage ? (
+				{!revealed ? (
+					<div className='bg-lavender h-full w-full bg-purple'></div>
+				) : revealed && coverImage ? (
 					<img
 						src={coverImage.url}
 						alt={revealed ? currentTrack?.name : "Pochette cachée"}
 						width={coverImage.width ?? undefined}
 						height={coverImage.height ?? undefined}
 						className={`h-full w-full object-cover transition duration-500 ease-out ${
-							revealed ? "scale-100 blur-none" : "scale-110 blur-2xl"
+							revealed ? "scale-100 blur-none" : "scale-110 blur-[200px]"
 						}`}
 					/>
 				) : (
-					<div className='flex h-full flex-col items-center justify-center gap-3 bg-[repeating-linear-gradient(-45deg,rgba(237,230,255,0.05)_0,rgba(237,230,255,0.05)_12px,rgba(237,230,255,0.02)_12px,rgba(237,230,255,0.02)_24px)] text-lavender/44'>
-						<IconMusic />
-						<span className='text-[0.8rem] tracking-[0.03em] uppercase'>
-							En attente du morceau…
-						</span>
-					</div>
+					!coverImage && (
+						<div className='flex h-full flex-col items-center justify-center gap-3 bg-[repeating-linear-gradient(-45deg,rgba(237,230,255,0.05)_0,rgba(237,230,255,0.05)_12px,rgba(237,230,255,0.02)_12px,rgba(237,230,255,0.02)_24px)] text-lavender/44'>
+							<IconMusic />
+							<span className='text-[0.8rem] tracking-[0.03em] uppercase'>
+								En attente du morceau…
+							</span>
+						</div>
+					)
 				)}
 
 				{/* Bottom scrim so the title stays legible over any cover */}
