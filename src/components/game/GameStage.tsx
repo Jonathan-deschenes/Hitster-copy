@@ -18,9 +18,7 @@ interface GameStageProps {
 	counter: number;
 	/** Playing or paused — the round clock overlays the album art. */
 	showCounter: boolean;
-	/** Host with a connected device: the settings panel restarts the game. */
-	isHost: boolean;
-	/** Host flag alone — kick/promote is not playback. */
+	/** Host flag — gates the settings panel and kick/promote alike. */
 	canManagePlayers: boolean;
 	onSettingsOpenChange: React.Dispatch<React.SetStateAction<boolean>>;
 	answerAction: (answer: string, playerId: string) => Promise<void>;
@@ -35,7 +33,6 @@ export default function GameStage({
 	currentTrack,
 	counter,
 	showCounter,
-	isHost,
 	canManagePlayers,
 	onSettingsOpenChange,
 	answerAction,
@@ -63,7 +60,7 @@ export default function GameStage({
 		<main className='relative z-10 flex w-full flex-1 flex-col items-center gap-4 px-4 py-2 sm:px-8 lg:min-h-0 lg:justify-center lg:px-12'>
 			<div className='my-auto flex w-full flex-1 flex-col items-center justify-center gap-6 lg:my-0 lg:grid lg:min-h-0 lg:grid-cols-[1fr_auto_1fr] lg:items-stretch lg:content-stretch'>
 				<div className='hidden min-h-0 lg:flex lg:flex-col lg:gap-4'>
-					{isHost && (
+					{canManagePlayers && (
 						<LobbySettingsPanel
 							lobby={lobby}
 							isOpen={settingsPanelOpen}
@@ -72,7 +69,7 @@ export default function GameStage({
 						/>
 					)}
 					<LobbyQuestionBox
-						compact={isHost && settingsPanelOpen}
+						compact={canManagePlayers && settingsPanelOpen}
 						question={gameState?.question ?? DEFAULT_QUESTION}
 						answerAction={answerAction}
 						currentPlayer={currentPlayerId}

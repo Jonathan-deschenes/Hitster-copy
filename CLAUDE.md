@@ -1,10 +1,11 @@
 # Bludster (`hitster-copy`)
 
-A self-hosted clone of the Hitster music guessing game. Players join a lobby, the host streams a
-track from Spotify, everyone types what they think the answer is, and the round pays out points.
+A self-hosted clone of the Hitster music guessing game. Players join a lobby, a track plays,
+everyone types what they think the answer is, and the round pays out points.
 
 **Stack:** React 19 + TypeScript + Vite + Tailwind v4 (SPA) · Supabase (Postgres + Realtime +
-Edge Functions) as the only backend · Spotify Web Playback SDK for audio.
+Edge Functions) as the only backend · Spotify catalog for track metadata, YouTube IFrame API for
+audio playback.
 
 **No test framework. No auth system.** Verification is manual.
 
@@ -22,23 +23,23 @@ Edge Functions) as the only backend · Spotify Web Playback SDK for audio.
 | `npm run lint` | ESLint (flat config, TS + react-hooks + react-refresh) |
 | `npm run preview` | Serve the production build |
 
-**Use `127.0.0.1`, never `localhost`.** `vite.config.ts` pins the host on purpose: Spotify matches
-redirect URIs literally, and the registered one is `http://127.0.0.1:5173/spotify/callback`.
-Opening the app on `localhost:5173` breaks the Spotify login flow.
+`vite.config.ts` still pins the dev server to `127.0.0.1` — a holdover from when Spotify's redirect
+URI had to match literally. Playback no longer involves any per-user Spotify login, so this isn't
+load-bearing anymore, but there's no reason to unpin it either.
 
 `npm run build` runs `tsc -b` first, and `noUnusedLocals` / `noUnusedParameters` are enabled in
 `tsconfig.app.json` — an unused variable fails the build, not just the lint.
 
 ### Environment
 
-Frontend vars live in `.env.local` (see `.env.example`):
-`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SPOTIFY_CLIENT_ID`, `VITE_SPOTIFY_REDIRECT_URI`.
+Frontend vars live in `.env.local` (see `.env.example`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
 
-The Edge Function has **separate** secrets, set in the Supabase dashboard, not in `.env.local`:
-`SPOTIFY_CLIENT_ID`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
-
-Hosting requires a **Spotify Premium** account — the Web Playback SDK refuses to stream otherwise,
-and the failure surfaces as the toast "Compte Spotify Premium requis pour lancer la musique."
+The Edge Functions have **separate** secrets, set in the Supabase dashboard, not in `.env.local`:
+`SPOTIFY_CLIENT_ID`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (used by `spotify-playlist`, the
+catalog metadata fetch), and `YOUTUBE_API_KEY` (used by `youtube-match`, the video lookup — a
+static key from a Google Cloud project with the YouTube Data API v3 enabled, no refresh flow
+needed). No frontend Spotify credentials exist anymore: the catalog fetch has always run
+server-side, with no per-user login involved.
 
 ---
 
@@ -47,34 +48,35 @@ and the failure surfaces as the toast "Compte Spotify Premium requis pour lancer
 Dependencies flow one way. Components stay presentational; they receive data and callbacks as props.
 
 ```
-pages/  →  hooks/  →  lib/{lobbies,spotify,scoring}  →  lib/supabaseClient
+pages/  →  hooks/  →  lib/{lobbies,spotify,youtube,scoring}  →  lib/supabaseClient
                 ↘  components/  (presentational only)
 ```
 
 | Path | Responsibility |
 | --- | --- |
-| `src/pages/` | `Home`, `Game`, `SpotifyCallback`. Routes are declared in `App.tsx`. |
-| `src/hooks/` | Stateful glue: `useLobbyRealtime`, `useGameActions`, `useSpotifyPlayer`, `useHostPlayback`, `useRoundLifecycle`, `useAnswerChime`, `useMusicQueue`, `usePlayerIdentity`, plus the form hooks. |
-| `src/lib/lobbies/` | **Every** Supabase read and write, split by concern. `rowOperations.ts` holds the shared read-modify-write plumbing. |
+| `src/pages/` | `Home`, `Game`. Routes are declared in `App.tsx`. |
+| `src/hooks/` | Stateful glue: `useLobbyRealtime`, `useGameActions`, `useYoutubePlayer`, `useYoutubePlayback`, `useRoundLifecycle`, `useAnswerChime`, `useMusicQueue`, `usePlayerIdentity`, plus the form hooks. |
+| `src/lib/lobbies/` | **Every** Supabase read and write, split by concern. `rowOperations.ts` holds the shared read-modify-write plumbing, including `regenerateMusicQueue`. |
 | `src/lib/scoring/` | Pure grading logic. No imports outside `types`. |
-| `src/lib/playback/` | Pure round clock (`elapsedMs`, `remainingSeconds`) and `resolvePlaybackIntent`. No imports outside `types`. |
-| `src/lib/spotify/` | `auth` (PKCE), `playerStore` (singleton device), `player` (Web API calls), `playlist` (Edge Function call). |
+| `src/lib/playback/` | Pure round clock (`elapsedMs`, `remainingSeconds`) and `resolvePlaybackIntent`. No imports outside `types`. Backend-agnostic — it derives an intent from an opaque track id, and doesn't care whether that id is a Spotify track or a YouTube video. |
+| `src/lib/spotify/` | `playlist` (Edge Function call for catalog metadata) — that's all that's left. Playback used to live here too; see "Playback: YouTube, not Spotify" below. |
+| `src/lib/youtube/` | `search` (Edge Function call to match a track to a video id), `player` (loads the IFrame API, creates a `YT.Player`). |
 | `src/types/index.ts` | All shared types. Naming convention is `somethingProps`. |
 | `src/constants/createGameOptions.ts` | Playlists, game modes, question text, duration bounds. |
-| `supabase/` | `schema.sql` and the `spotify-playlist` Edge Function. |
+| `supabase/` | `schema.sql` and two Edge Functions: `spotify-playlist` (catalog metadata) and `youtube-match` (video lookup). |
 
-Routes: `/` · `/create` · `/join` · `/game/:code` · `/spotify/callback`.
+Routes: `/` · `/create` · `/join` · `/game/:code`.
 
 ### `Game.tsx` is composition only
 
-The page holds no game logic. It resolves the lobby, derives the two host roles, calls five hooks
+The page holds no game logic. It resolves the lobby, derives the host role, calls five hooks
 and renders four children — nothing else. Each hook owns one concern and one set of invariants:
 
 | Hook | Owns |
 | --- | --- |
 | `useLobbyRealtime` | The row, plus `notFound` / `kicked`. |
 | `useGameActions` | Every user-initiated mutation, and the presence subscription. |
-| `useHostPlayback` | Driving the Spotify device from the row (`appliedRef`, the two `wasHost*` refs). |
+| `useYoutubePlayback` | Driving this tab's YouTube player from the row (`appliedRef`) — runs for every player, not just the host. |
 | `useRoundLifecycle` | The round clock and the payout (`finalizeRound`, `roundFinalizedRef`). |
 | `useAnswerChime` | The pop sound when one more player answers. |
 
@@ -183,7 +185,7 @@ whose system clock is badly skewed sees a skewed countdown. Values are clamped t
 **Only the host ends the round.** Scoring reads and rewrites the whole `players` array, so if
 each browser did it they would race each other into clobbering scores. Non-host clients just
 sit at 0 and wait for the realtime update. This lives in `useRoundLifecycle`, gated on
-`isHostPlayer` — the flag alone, since a host without Spotify still owes scoring.
+`isHostPlayer`.
 
 Two things can end a round, and both funnel through `finalizeRound`:
 - the countdown reaching 0
@@ -258,85 +260,123 @@ Two things not to "fix":
 
 ---
 
-## Host and Spotify
+## Playback: YouTube, not Spotify
 
-**"Host" means two different things** — don't conflate them:
+Audio used to play through the Spotify Web Playback SDK in exactly one browser tab — the host's.
+That had three hard problems: only one device ever produced sound (so "anyone can host" never
+meant "everyone hears the music" unless they shared a room), iOS Safari doesn't support the SDK at
+all, and there's no way to relay Spotify audio from a server — the Web API/SDK never expose a raw
+stream. YouTube IFrame embeds need no per-user login, so **every client runs its own player and
+produces its own audio locally** — no server relay, and no Spotify auth anywhere in the frontend
+anymore.
 
-- `isHost` = has the host flag **and** `isSpotifyConnected()`. Gates playback UI.
-- `isHostPlayer` = the flag alone. Gates scoring duties and player management (kick/promote), which
-  must happen whether or not this browser can stream.
+**Spotify is metadata-only now.** `src/lib/spotify/playlist.ts` (`fetchPlaylistTracks`) still calls
+the `spotify-playlist` Edge Function for title/artist/release date/album/cover — nothing about that
+pipeline changed, and `src/lib/scoring/` still grades off it exactly as before. What changed is
+*what plays*: `regenerateMusicQueue` (`src/lib/lobbies/rowOperations.ts`) additionally calls
+`matchYoutubeVideos` (`src/lib/youtube/search.ts` → the `youtube-match` Edge Function) to attach a
+`youtubeIds: string[]` list of candidate videos to each track before writing the queue. A track with
+no surviving candidate at all is dropped rather than queued unplayable, which is why the fetch asks
+Spotify for `rounds * 1.3` tracks instead of exactly `rounds`; a queue that still comes up short of
+`totalRounds` is already a handled case (`isFinalRound` is bounded by queue length, see the Game
+loop section).
 
-Both are derived once in `Game.tsx` and passed down. Deriving `isHost` where `isHostPlayer` belongs
-is the recurring bug here: it once made the "connect Spotify" button unreachable (`isHost &&
-!isSpotifyConnected()` is always false) and gave a lapsed host kick/promote on mobile but not desktop.
+**Matching is two-stage, because the search endpoint's embeddability flag is a hint, not a fact.**
+`youtube-match` first calls `search.list` with `videoEmbeddable=true` for up to 8 raw candidates per
+track, then verifies every candidate across the whole batch in one (or a few, chunked at 50 ids)
+`videos.list?part=status` call and keeps only the ones whose *current* `status.embeddable` is
+actually `true` — the search index lags behind a video's real, live embed status, which is exactly
+what used to surface as "cette vidéo ne peut pas être lue ici" despite the search filter already
+being on. The `videos.list` verification costs 1 quota unit per up-to-50 ids, negligible next to the
+100 units per search call. Up to `VERIFIED_CANDIDATES_PER_TRACK` (5) survivors are kept per track, in
+original search-relevance order — `musicItemsProps.youtubeIds` carries that whole list, not just a
+single winner, precisely so a bad pick isn't a dead end.
 
-**One device per browser tab.** `playerStore.ts` is a module-level singleton read through
-`useSyncExternalStore`, deliberately outliving any single page. Recreating the SDK player per lobby
-used to race Spotify's backend teardown of the previous device and produced spurious
-404 "Device not found" when hosting lobbies back to back.
+**Neither API call in `youtube-match` swallows its own errors, on purpose.** Both `searchVideoIds`
+and `fetchEmbeddableIds` only throw on an HTTP-level failure (quota exhausted, bad key), never on a
+genuine empty result — an early version caught those per-track/per-chunk and treated them as "no
+match," which made a systemic failure (quota exceeded on every call) indistinguishable from "this
+whole playlist has no YouTube matches": `regenerateMusicQueue` silently wrote an empty
+`music_queue.items` with no error anywhere. Letting a real API failure fail the whole request (500,
+surfaced as "Impossible de créer le lobby" client-side) is worse UX for a transient blip but is what
+makes a systemic problem loud enough to actually notice and debug.
 
-**Every player pre-warms a device, from exactly one call site.** `Game.tsx` calls
-`useSpotifyPlayer({ enabled: true })` unconditionally and injects the handle into `useGameActions`
-and `useHostPlayback`. Two things matter:
+**`isHost` doesn't exist anymore — there's only `isHostPlayer`.** Playback needing "a connected
+Spotify account" was the entire reason for that split; with no device and no login, the host flag
+alone gates everything the old `isHost` did (playback controls, volume, settings panel, skip/restart)
+same as it already gated scoring and kick/promote. If you find yourself wanting to reintroduce a
+narrower "is this browser capable of X" flag for playback, that's very likely the same bug this
+section used to warn about, just inverted.
 
-- `enabled: true` for *everyone*, not just the host — a player who already has a device ready
-  resumes instantly on promotion instead of racing Spotify's "not yet controllable" window.
-- Consumers take the **whole memoized handle**. Narrowing it to a `{ pause, resume }` literal at the
-  call site changes identity every render and re-runs the reconciler continuously.
+**No cross-page singleton, on purpose.** The Spotify device used to live in a module-level store
+outliving any single page, because recreating the SDK player raced Spotify's backend teardown of
+the previous device. A `YT.Player` has no server-side device to race — `useYoutubePlayer` owns a
+plain component-scoped ref, created while `enabled` and destroyed on unmount. Simpler by
+construction, not by omission.
 
-**Playback is a reconciler, not a state machine.** `resolvePlaybackIntent` (`src/lib/playback/`)
-derives what the device should be doing from the lobby row alone — it has no memory.
-`useHostPlayback` applies the result and uses `appliedRef` only to avoid re-issuing an identical
-command. The old design read a per-tab ref of the previous status, which a promoted host **never
-populated** (its effect early-returned all game while it wasn't host), so a fresh host acted on
-beliefs it never formed and issued commands its device could not honour.
+**Every player runs its own reconciler.** `useYoutubePlayer({ enabled: true })` is still called
+unconditionally in `Game.tsx` for *every* player (not gated on host), same as the old Spotify
+pre-warm — except now every tab's player actually produces audio, not just the host's.
+`useYoutubePlayback` applies `resolvePlaybackIntent` (`src/lib/playback/`, unchanged — it already
+took an opaque track id and doesn't care whether that id is a Spotify track or a YouTube video, so it
+takes the *first* candidate purely as a stable identity for its own `appliedRef` dedup, not
+necessarily the one that ends up playing) against that player, using `appliedRef` to dedupe identical
+intents exactly like the old `useHostPlayback` did. What's gone is the host-handoff bookkeeping
+(`wasHostPlayerRef`, `wasHostWithDeviceRef`): since every client reconciles independently against the
+same row instead of one client inheriting another's device state, there's no "did this browser ever
+populate `appliedRef`" question to answer anymore.
 
-Two rules inside `useHostPlayback` that look like duplication and are not:
+**A track's candidates are a runtime fallback chain, not just a matching-time list.**
+`useYoutubePlayer` keeps its own `attemptRef` (candidates, current index, position) separate from
+`useYoutubePlayback`'s `appliedRef`. When the player's `onError` fires — a candidate that passed
+`videos.list` verification can still fail live (geo-restriction, a claim landing after the check) —
+the hook silently advances to the next candidate and retries, and only surfaces a toast once every
+candidate in the list is exhausted. `useYoutubePlayback` never sees this happen: `resume()` resolves
+once it *starts* an attempt, not once one actually succeeds, so the reconciler's job stays "kick off
+playback for this track once" regardless of how many candidates it takes underneath.
 
-- **`wasHostPlayerRef` and `wasHostWithDeviceRef` track different booleans.** The first keys on
-  `isHostPlayer` (stop the outgoing host's audio, owed even if their token lapsed); the second keys
-  on `isHost`, because it answers "did this client ever populate `appliedRef`?" — and the reconciler
-  early-returns while `!isHost`. Merging them reintroduces the promoted-host bug.
-- **`resolvePlaybackIntent` is called inside the effect body**, using its `Date.now()` default.
-  Hoisting it into a `useMemo`, or feeding it the countdown ticker's `now`, freezes the position at
-  render time and makes a resumed track seek to a stale spot. They are deliberately different clocks.
+**Resume-in-place mirrors the old Spotify behavior, for the same reason.** `useYoutubePlayer.resume`
+checks whether the player already holds the requested video id; if so it just calls `playVideo()`
+without seeking, instead of reloading at the freshly computed position. This isn't optional
+politeness — `resumeRound` rewinds `roundStartedAt` by `pausedElapsedMs` so the newly computed
+position matches wherever playback was paused, and an unconditional seek-on-resume would be
+redundant at best and a stutter at worst.
 
-**Playback commands are serialized, deduped, and superseded** (`player.ts`). Spotify Connect applies
-one command at a time per device and answers an overlapping one with `403 Restriction violated`, so
-requests are chained per device (`deviceQueues`) and in-flight ones are collapsed by
-`command:deviceId`. Enqueuing a command **aborts the previous one** for that device
-(`deviceAborts`): a command stuck in the retry loop holds the queue for seconds while the round runs
-on, and what it eventually achieves is already stale. Callers detect that with `isPlaybackAborted`
-and stay quiet — a superseded command is not a failure to report.
+**The audio-unlock gesture is new, and is the one thing YouTube needs that Spotify didn't.**
+Browsers (iOS Safari in particular) only allow the *first* play to start inside a user-gesture call
+stack — and it has to be a real play of real content: calling `playVideo()`/`pauseVideo()` on a
+player with nothing cued doesn't "prime" anything, it just throws the same "invalid parameter" error
+as any other call with no video loaded. So `unlock(candidates, positionSeconds)` **is** the round's
+actual first playback attempt, not a separate step — it's exactly `resume()` under the hood, marking
+`isUnlocked` first. `Game.tsx` only offers this once one exists: `canUnlock` is
+`resolvePlaybackIntent(gameState, currentTrack?.youtubeIds[0]).kind === "play"`, computed fresh on
+every render so the click always acts on "now," never a stale render's position. `GameFooter`'s
+volume slot reflects three states, not two: nothing while `!canUnlock` (no track to unlock with
+yet — typically `waiting`/`paused`), the "Activer le son" `IconButton` while `canUnlock &&
+!isUnlocked`, and `YoutubeVolumeControl` once `isUnlocked`. `useYoutubePlayback` early-returns while
+`!isUnlocked` — skip this gate and playback silently never starts on strict browsers instead of
+erroring loudly.
 
-Retries are per command: `play` retries transient 403/404 (a device fresh from `ready` really does
-need that window), `pause` does not (reaching the Web API means the SDK saw nothing playing, so
-there was probably nothing to pause). `PREMIUM_REQUIRED` is a permanent rejection and is never
-retried.
+**A fresh page load always needs one click, and that's not fixable from here.** Every full reload
+resets the browser's own "has this frame seen a user gesture" state, YouTube embeds included —
+no amount of client-side bookkeeping (a stored flag, a prior session's unlock) changes what the
+browser itself remembers after a reload, because the permission is enforced by the browser process,
+not by anything this app controls. What *is* fixable, and was the actual bug: the click used to throw
+immediately because it primed an empty player instead of loading the real track, so it looked broken
+rather than just "needs the one click every fresh load genuinely needs."
 
-**Prefer the SDK transport controls.** `pauseLocalPlayback` / `resumeLocalPlayback` act on what the
-device is really doing and no-op harmlessly; the Web API equivalents throw 403 if the state already
-matches. `resumeLocalPlayback(trackId)` takes the track deliberately — it returns false unless
-*this* device already holds *that* track, so a new track can't be swallowed as a no-op resume.
+**Host handoff still freezes the round clock.** `promotePlayer` still force-pauses a `playing` game
+and freezes `pausedElapsedMs` on handoff — that part didn't change, because the round clock lives in
+the row regardless of what's driving playback. What it no longer needs to reason about is a device:
+every client, promoted host or not, was already running its own reconciler against the same row.
+Disconnects that skip the normal leave path (closed tab, crash, lost network) are still caught by
+Supabase presence in `useGameActions`; `pickSuccessorPlayer` still picks deterministically (lowest
+id) so exactly one client acts without coordination.
 
-**There is no `resumePlaybackOnDevice`, and adding one back is a bug.** `PUT /play` with no body
-asks a device to resume the context it already holds. On a device that holds nothing — precisely a
-host promoted mid-game — it is a guaranteed `403 Restriction violated`. `useSpotifyPlayer.resume`
-falls back to *starting* the track at the round's position instead, which is why it needs
-`(trackId, positionMs)`.
-
-**Host handoff.** `promotePlayer` force-pauses a `playing` game so stale audio doesn't keep running
-on the outgoing host's browser, and **freezes the round clock** into `pausedElapsedMs` — otherwise
-the handoff gap would be counted as round time. Because the clock is in the row, the new host can
-pick the track up at the right second even though their device holds no Spotify context.
-Disconnects that skip the normal leave path (closed tab, crash, lost network) are caught by Supabase
-presence in `useGameActions`; every client runs the same logic and `pickSuccessorPlayer` picks
-deterministically (lowest id), so exactly one of them acts without any coordination.
-
-**Tokens.** The host's PKCE tokens live in `localStorage` under `SPOTIFY_HOST_AUTH`. The Edge
-Function's catalog token lives in the `spotify_catalog_token` table rather than a static secret,
-because Spotify's PKCE refresh tokens are **single-use** — each refresh invalidates the old one and
-must persist the new one immediately.
+**YouTube Data API quota is a known, accepted constraint, not a bug to fix here.** Each
+`youtube-match` call spends 100 quota units per track searched (10k/day free tier ⇒ roughly 3–5 full
+queue builds/day). Fine for a private, friends-only game; a future cache of
+`spotify track id → youtube id` in Postgres would remove repeat lookups if that ever gets tight.
 
 ---
 

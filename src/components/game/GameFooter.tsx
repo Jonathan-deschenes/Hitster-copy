@@ -1,12 +1,12 @@
 import { IconButton, PrimaryButton } from "../Button";
 import HostActionButton from "./HostActionButton";
-import ConnectSpotifyButton from "./ConnectSpotifyButton";
-import SpotifyVolumeControl from "./SpotifyVolumeControl";
+import YoutubeVolumeControl from "./YoutubeVolumeControl";
 import {
 	IconRefresh,
 	IconSettings,
 	IconSkip,
 	IconUsers,
+	IconVolume,
 } from "../icons/GameIcons";
 import {
 	GameStatus,
@@ -16,13 +16,16 @@ import {
 
 interface GameFooterProps {
 	gameState?: gameStateProps;
-	/** Host flag **and** a connected Spotify account — gates playback controls. */
-	isHost: boolean;
-	/** Host flag alone. A host without Spotify is the one who needs to connect. */
+	/** Host flag — gates every playback and management control alike. */
 	isHostPlayer: boolean;
 	hostActionByStatus: Record<GameStateEnum, () => void>;
 	/** Last round of the game — relabels the host action, see `HostActionButton`. */
 	isFinalRound: boolean;
+	/** Browsers block audio until a user gesture — the volume slider's slot doubles as that gesture. */
+	isUnlocked: boolean;
+	/** Whether there's an actual track to unlock with yet — see `Game.tsx`. */
+	canUnlock: boolean;
+	onUnlock: () => void;
 	volume: number;
 	onVolumeChange: (volume: number) => void;
 	onLeave: () => void;
@@ -35,10 +38,12 @@ interface GameFooterProps {
 
 export default function GameFooter({
 	gameState,
-	isHost,
 	isHostPlayer,
 	hostActionByStatus,
 	isFinalRound,
+	isUnlocked,
+	canUnlock,
+	onUnlock,
 	volume,
 	onVolumeChange,
 	onLeave,
@@ -66,10 +71,7 @@ export default function GameFooter({
 			</PrimaryButton>
 			<div></div>
 			<div className='w-full lg:w-fit flex flex-wrap items-center justify-center gap-3 lg:justify-self-end'>
-				{/* A host whose Spotify isn't connected is exactly who needs this. */}
-				{isHostPlayer && !isHost && <ConnectSpotifyButton />}
-
-				{gameState && isHost && !gameOver && (
+				{gameState && isHostPlayer && !gameOver && (
 					<HostActionButton
 						status={gameState.status}
 						isFinalRound={isFinalRound}
@@ -77,7 +79,7 @@ export default function GameFooter({
 					/>
 				)}
 
-				{roundInFlight && isHost && (
+				{roundInFlight && isHostPlayer && (
 					<IconButton
 						label='Passer la musique'
 						icon={<IconSkip />}
@@ -85,7 +87,7 @@ export default function GameFooter({
 					/>
 				)}
 
-				{gameState && isHost && !gameOver && (
+				{gameState && isHostPlayer && !gameOver && (
 					<IconButton
 						label='Relancer la partie'
 						icon={<IconRefresh />}
@@ -94,8 +96,15 @@ export default function GameFooter({
 				)}
 
 				<div className='flex gap-4'>
-					{isHost && !gameOver && (
-						<SpotifyVolumeControl volume={volume} onChange={onVolumeChange} />
+					{!gameOver && isUnlocked && (
+						<YoutubeVolumeControl volume={volume} onChange={onVolumeChange} />
+					)}
+					{!gameOver && !isUnlocked && canUnlock && (
+						<IconButton
+							label='Activer le son'
+							icon={<IconVolume />}
+							onClick={onUnlock}
+						/>
 					)}
 					{canOpenPlayers && (
 						<IconButton
@@ -105,7 +114,7 @@ export default function GameFooter({
 							onClick={onOpenPlayers}
 						/>
 					)}
-					{isHost && (
+					{isHostPlayer && (
 						<IconButton
 							label='Paramètres'
 							icon={<IconSettings />}

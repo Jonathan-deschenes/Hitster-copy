@@ -3,12 +3,17 @@ import type {
 	gameCategoryProps,
 	lobbyProps,
 	lobbyRowProps,
+	musicItemsProps,
 	playlistQueueProps,
 } from "../../types";
 import { rowToLobby } from "./mappers";
 import { findLobbyRowByCode } from "./queries";
 import { fetchPlaylistTracks } from "../spotify/playlist";
+import { matchYoutubeVideos } from "../youtube/search";
 import shuffle from "lodash/shuffle";
+
+/** Headroom over `rounds` so a few unmatched YouTube searches don't shrink the queue. */
+const QUEUE_BUFFER_RATIO = 1.3;
 
 /** Postgres `unique_violation` — the `code` column collided. */
 export const UNIQUE_VIOLATION = "23505";
@@ -64,17 +69,37 @@ export async function updateLobbyRowById(
 
 /**
  * Draws a fresh shuffled queue for the playlist and writes it onto the row.
- * Shared by lobby creation and "relancer la partie" — the queue holds exactly
- * `rounds` items, since `startRound` derives its pointer from the round number.
+ * Shared by lobby creation and "relancer la partie" — the queue holds up to
+ * `rounds` items, since `startRound` derives its pointer from the round number
+ * and a shorter-than-requested queue is already a handled case (see
+ * `isFinalRound`).
+ *
+ * Playback plays a YouTube video, not the Spotify track itself, so every item
+ * needs at least one matched video id. A track with no match at all is
+ * dropped instead of queued unplayable — the extra headroom
+ * (`QUEUE_BUFFER_RATIO`) over `rounds` keeps a normal playlist from coming up
+ * short from a few misses.
  */
 export async function regenerateMusicQueue(
 	rowId: string,
 	category: gameCategoryProps,
 	rounds: number,
 ): Promise<lobbyProps> {
-	const tracks = await fetchPlaylistTracks(category.value, rounds);
+	const tracks = await fetchPlaylistTracks(
+		category.value,
+		Math.ceil(rounds * QUEUE_BUFFER_RATIO),
+	);
+	const matches = await matchYoutubeVideos(
+		tracks.map((track) => ({ id: track.id, name: track.name, artist: track.artist })),
+	);
+
+	const matched: musicItemsProps[] = tracks
+		.map((track) => ({ ...track, youtubeIds: matches[track.id] ?? [] }))
+		.filter((track): track is musicItemsProps => track.youtubeIds.length > 0)
+		.slice(0, rounds);
+
 	const music_queue: playlistQueueProps = {
-		items: shuffle(tracks),
+		items: shuffle(matched),
 		current: 0,
 	};
 

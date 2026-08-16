@@ -1,14 +1,17 @@
 import type { musicItemsProps } from "../../types";
 import { supabase } from "../supabaseClient";
 
+/** What the Spotify catalog actually returns — everything but the YouTube match, which is added separately. */
+export type spotifyTrackProps = Omit<musicItemsProps, "youtubeId">;
+
 type SpotifyPlaylistResponse = {
-	musics: musicItemsProps[];
+	musics: spotifyTrackProps[];
 };
 
 export async function fetchPlaylistTracks(
 	playlistId: string,
 	maxTracks?: number,
-): Promise<musicItemsProps[]> {
+): Promise<spotifyTrackProps[]> {
 	const { data, error } = await supabase.functions.invoke<SpotifyPlaylistResponse>(
 		"spotify-playlist",
 		{ body: { playlistId, maxTracks } },

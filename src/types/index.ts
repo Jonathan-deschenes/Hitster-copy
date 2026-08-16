@@ -128,6 +128,13 @@ export type musicItemsProps = {
 	duration: number;
 	cover: spotifyImageProps;
 	releaseDate: string;
+	/**
+	 * Candidate YouTube video ids for playback, ranked by search relevance.
+	 * More than one on purpose: `videoEmbeddable=true` from the search is a
+	 * hint, not a guarantee, so the player falls back through these instead of
+	 * going silent on a single bad pick. Empty when no match was found at all.
+	 */
+	youtubeIds: string[];
 };
 
 export type playlistQueueProps = {

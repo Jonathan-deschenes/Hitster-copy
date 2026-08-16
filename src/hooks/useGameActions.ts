@@ -20,14 +20,14 @@ import {
 	pickRandomOtherPlayer,
 	pickSuccessorPlayer,
 } from "../util";
-import type { spotifyPlayerHandleProps } from "./useSpotifyPlayer";
+import type { youtubePlayerHandleProps } from "./useYoutubePlayer";
 
 interface UseGameActionsParams {
 	code?: string;
 	lobby: lobbyProps | null;
 	currentPlayerId?: string | null;
 	/** Owned by the page — see the single call site in `pages/Game.tsx`. */
-	spotifyPlayer: spotifyPlayerHandleProps;
+	youtubePlayer: youtubePlayerHandleProps;
 }
 
 /** Promotes `successor` and removes the departing player, or deletes the lobby if no one is left to hand it to. */
@@ -48,7 +48,7 @@ export function useGameActions({
 	code,
 	lobby,
 	currentPlayerId,
-	spotifyPlayer,
+	youtubePlayer,
 }: UseGameActionsParams) {
 	const navigate = useNavigate();
 
@@ -105,7 +105,7 @@ export function useGameActions({
 
 		if (currentPlayer?.host) {
 			const successor = pickRandomOtherPlayer(players, currentPlayerId);
-			await spotifyPlayer.pause();
+			await youtubePlayer.pause();
 			await resolveHostDeparture(code, currentPlayerId, successor);
 		} else {
 			await leaveLobby(code, currentPlayerId);

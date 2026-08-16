@@ -11,8 +11,9 @@ import { GameStatus, type lobbyProps } from "../types";
 import { useLobbyRealtime } from "../hooks/useLobbyRealtime";
 import { useGameActions } from "../hooks/useGameActions";
 import { useMusicQueue } from "../hooks/useMusicQueue";
-import { useSpotifyPlayer } from "../hooks/useSpotifyPlayer";
-import { useHostPlayback } from "../hooks/useHostPlayback";
+import { useYoutubePlayer } from "../hooks/useYoutubePlayer";
+import { useYoutubePlayback } from "../hooks/useYoutubePlayback";
+import { resolvePlaybackIntent } from "../lib/playback";
 import { useRoundLifecycle } from "../hooks/useRoundLifecycle";
 import { useAnswerChime } from "../hooks/useAnswerChime";
 import GameStage from "../components/game/GameStage";
@@ -20,7 +21,6 @@ import PodiumStage from "../components/game/PodiumStage";
 import GameFooter from "../components/game/GameFooter";
 import PlayersModal from "../components/game/PlayersModal";
 import SettingsModal from "../components/game/SettingsModal";
-import { isSpotifyConnected } from "../lib/spotify/auth";
 
 export default function Game() {
 	const { code } = useParams<{ code: string }>();
@@ -37,10 +37,9 @@ export default function Game() {
 		initialLobby,
 	);
 
-	// The one Spotify device for this tab. Deliberately enabled for every player,
-	// not just the host: a pre-warmed device lets a later promotion resume
-	// instantly instead of racing Spotify's "not yet controllable" window.
-	const spotifyPlayer = useSpotifyPlayer({ enabled: true });
+	// One YouTube player per tab, for every player, not just the host: each
+	// client now produces its own audio instead of only one shared device's.
+	const youtubePlayer = useYoutubePlayer({ enabled: true });
 
 	const {
 		currentPlayer,
@@ -56,7 +55,7 @@ export default function Game() {
 		code,
 		lobby,
 		currentPlayerId: current,
-		spotifyPlayer,
+		youtubePlayer,
 	});
 
 	// Read-only: `startRound` owns `current` server-side.
@@ -65,18 +64,29 @@ export default function Game() {
 
 	const gameState = lobby?.game_state;
 
-	// Two different roles: `isHostPlayer` owes scoring even without Spotify,
-	// `isHost` additionally holds a device and gates playback only.
+	// No separate "connected a device" flag anymore: playback needs no login,
+	// so being the host player is the only thing that matters.
 	const isHostPlayer = !!currentPlayer?.host;
-	const isHost = isHostPlayer && isSpotifyConnected();
 
-	useHostPlayback({
-		isHost,
-		isHostPlayer,
+	useYoutubePlayback({
 		gameState,
-		currentTrackId: currentTrack?.id,
-		spotifyPlayer,
+		currentTrack,
+		youtubePlayer,
 	});
+
+	// The "Activer le son" gesture must load a *real* track, not prime an empty
+	// player — calling play() with nothing cued is what used to throw "invalid
+	// parameter" immediately. Computed fresh so a stale intent from an earlier
+	// render never drives the click, same reasoning as `useYoutubePlayback`'s
+	// own reconciler.
+	const unlockCandidateIds = currentTrack?.youtubeIds ?? [];
+	const unlockIntent = resolvePlaybackIntent(gameState, unlockCandidateIds[0]);
+	const canUnlock = unlockIntent.kind === "play";
+
+	function handleUnlock() {
+		if (unlockIntent.kind !== "play") return;
+		youtubePlayer.unlock(unlockCandidateIds, unlockIntent.positionMs / 1000);
+	}
 
 	const answeredCount = lobby?.player.filter((p) => !!p.answer).length ?? 0;
 	useAnswerChime({ answeredCount, enabled: isHostPlayer });
@@ -141,7 +151,6 @@ export default function Game() {
 						showCounter={
 							status === GameStatus.Playing || status === GameStatus.Paused
 						}
-						isHost={isHost}
 						canManagePlayers={isHostPlayer}
 						onSettingsOpenChange={setSettingsOpen}
 						answerAction={handlePlayerAnswer}
@@ -152,12 +161,14 @@ export default function Game() {
 
 				<GameFooter
 					gameState={gameState}
-					isHost={isHost}
 					isHostPlayer={isHostPlayer}
 					hostActionByStatus={hostActionByStatus}
 					isFinalRound={finalRound}
-					volume={spotifyPlayer.volume}
-					onVolumeChange={spotifyPlayer.setVolume}
+					isUnlocked={youtubePlayer.isUnlocked}
+					canUnlock={canUnlock}
+					onUnlock={handleUnlock}
+					volume={youtubePlayer.volume}
+					onVolumeChange={youtubePlayer.setVolume}
 					onLeave={handleLeaving}
 					onSkipTrack={handleSkipTrack}
 					onRestartGame={handleRestartGame}
