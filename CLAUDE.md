@@ -1,16 +1,14 @@
 # Bludster (`hitster-copy`)
 
-A self-hosted clone of the Hitster music guessing game. Players join a lobby, a track plays,
-everyone types what they think the answer is, and the round pays out points.
+A self-hosted Hitster clone: players join a lobby, a track plays, everyone types their guess, the
+round pays out points.
 
-**Stack:** React 19 + TypeScript + Vite + Tailwind v4 (SPA) · Supabase (Postgres + Realtime +
-Edge Functions) as the only backend · Spotify catalog for track metadata, YouTube IFrame API for
-audio playback.
+**Stack:** React 19 + TypeScript + Vite + Tailwind v4 (SPA) · Supabase (Postgres + Realtime + Edge
+Functions), the only backend · Spotify for metadata, YouTube IFrame API for playback.
 
 **No test framework. No auth system.** Verification is manual.
 
-> **The UI is French.** Every user-facing string — buttons, toasts, errors, questions — must be
-> written in French. Code, comments and type names are in English.
+> **The UI is French** — every user-facing string. Code, comments and type names are English.
 
 ---
 
@@ -22,214 +20,140 @@ audio playback.
 | `npm run build` | `tsc -b && vite build` — typechecks, then builds |
 | `npm run lint` | ESLint (flat config, TS + react-hooks + react-refresh) |
 | `npm run preview` | Serve the production build |
+| `npm run warm-cache` | Fill the YouTube match cache (see Playback) |
 
-`vite.config.ts` still pins the dev server to `127.0.0.1` — a holdover from when Spotify's redirect
-URI had to match literally. Playback no longer involves any per-user Spotify login, so this isn't
-load-bearing anymore, but there's no reason to unpin it either.
+- `noUnusedLocals`/`noUnusedParameters` are on and `build` runs `tsc -b` first — an unused variable
+  **fails the build**, not just the lint.
+- `vite.config.ts` pins the dev server to `127.0.0.1` (Spotify-redirect holdover); harmless, leave it.
 
-`npm run build` runs `tsc -b` first, and `noUnusedLocals` / `noUnusedParameters` are enabled in
-`tsconfig.app.json` — an unused variable fails the build, not just the lint.
-
-### Environment
-
-Frontend vars live in `.env.local` (see `.env.example`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
-
-The Edge Functions have **separate** secrets, set in the Supabase dashboard, not in `.env.local`:
-`SPOTIFY_CLIENT_ID`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (used by `spotify-playlist`, the
-catalog metadata fetch), and `YOUTUBE_API_KEY` (used by `youtube-match`, the video lookup — a
-static key from a Google Cloud project with the YouTube Data API v3 enabled, no refresh flow
-needed). No frontend Spotify credentials exist anymore: the catalog fetch has always run
-server-side, with no per-user login involved.
+**Environment.** Frontend: `.env.local` with `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. Edge
+Functions have **separate** dashboard secrets: `SPOTIFY_CLIENT_ID`, `SUPABASE_URL`,
+`SUPABASE_SERVICE_ROLE_KEY` (`spotify-playlist`) and `YOUTUBE_API_KEY` (`youtube-match`, a static
+YouTube Data API v3 key). No frontend Spotify credentials.
 
 ---
 
 ## Architecture
 
-Dependencies flow one way. Components stay presentational; they receive data and callbacks as props.
+Dependencies flow one way. Components are presentational — data and callbacks come as props.
 
 ```
-pages/  →  hooks/  →  lib/{lobbies,spotify,youtube,scoring}  →  lib/supabaseClient
+pages/  →  hooks/  →  lib/{lobbies,spotify,youtube,scoring,playback}  →  lib/supabaseClient
                 ↘  components/  (presentational only)
 ```
 
 | Path | Responsibility |
 | --- | --- |
-| `src/pages/` | `Home`, `Game`. Routes are declared in `App.tsx`. |
-| `src/hooks/` | Stateful glue: `useLobbyRealtime`, `useGameActions`, `useYoutubePlayer`, `useYoutubePlayback`, `useRoundLifecycle`, `useAnswerChime`, `useMusicQueue`, `usePlayerIdentity`, plus the form hooks. |
-| `src/lib/lobbies/` | **Every** Supabase read and write, split by concern. `rowOperations.ts` holds the shared read-modify-write plumbing, including `regenerateMusicQueue`. |
-| `src/lib/scoring/` | Pure grading logic. No imports outside `types`. |
-| `src/lib/playback/` | Pure round clock (`elapsedMs`, `remainingSeconds`) and `resolvePlaybackIntent`. No imports outside `types`. Backend-agnostic — it derives an intent from an opaque track id, and doesn't care whether that id is a Spotify track or a YouTube video. |
-| `src/lib/spotify/` | `playlist` (Edge Function call for catalog metadata) — that's all that's left. Playback used to live here too; see "Playback: YouTube, not Spotify" below. |
-| `src/lib/youtube/` | `search` (Edge Function call to match a track to a video id), `player` (loads the IFrame API, creates a `YT.Player`). |
-| `src/types/index.ts` | All shared types. Naming convention is `somethingProps`. |
+| `src/pages/` | `Home`, `Game`. Routes in `App.tsx`: `/` · `/create` · `/join` · `/game/:code`. |
+| `src/hooks/` | Stateful glue: `useLobbyRealtime`, `useGameActions`, `useYoutubePlayer`, `useYoutubePlayback`, `useRoundLifecycle`, `useAnswerChime`, `useMusicQueue`, `usePlayerIdentity`, form hooks. |
+| `src/lib/lobbies/` | **Every** Supabase read/write. `rowOperations.ts` holds shared read-modify-write plumbing incl. `regenerateMusicQueue`. |
+| `src/lib/scoring/` | Pure grading. No imports outside `types`. |
+| `src/lib/playback/` | Pure round clock (`elapsedMs`, `remainingSeconds`) + `resolvePlaybackIntent`. Backend-agnostic (opaque track id). |
+| `src/lib/spotify/` | `playlist` — the catalog-metadata Edge Function call. |
+| `src/lib/youtube/` | `search` (track → video ids), `player` (IFrame API + `YT.Player`). |
+| `src/types/index.ts` | All shared types (`somethingProps` naming). |
 | `src/constants/createGameOptions.ts` | Playlists, game modes, question text, duration bounds. |
-| `supabase/` | `schema.sql` and two Edge Functions: `spotify-playlist` (catalog metadata) and `youtube-match` (video lookup). |
+| `supabase/` | `schema.sql` + Edge Functions `spotify-playlist` and `youtube-match`. |
 
-Routes: `/` · `/create` · `/join` · `/game/:code`.
-
-### `Game.tsx` is composition only
-
-The page holds no game logic. It resolves the lobby, derives the host role, calls five hooks
-and renders four children — nothing else. Each hook owns one concern and one set of invariants:
+**`Game.tsx` is composition only** — no game logic; it resolves the lobby, derives the host role, and
+wires five hooks to four children:
 
 | Hook | Owns |
 | --- | --- |
-| `useLobbyRealtime` | The row, plus `notFound` / `kicked`. |
-| `useGameActions` | Every user-initiated mutation, and the presence subscription. |
-| `useYoutubePlayback` | Driving this tab's YouTube player from the row (`appliedRef`) — runs for every player, not just the host. |
-| `useRoundLifecycle` | The round clock and the payout (`finalizeRound`, `roundFinalizedRef`). |
+| `useLobbyRealtime` | The row, plus `notFound`/`kicked`. |
+| `useGameActions` | Every user-initiated mutation + presence subscription. |
+| `useYoutubePlayback` | Driving this tab's player from the row — every player, not just host. |
+| `useRoundLifecycle` | Round clock and payout (`finalizeRound`, `roundFinalizedRef`). |
 | `useAnswerChime` | The pop sound when one more player answers. |
 
-Children: `GameStage` (the `<main>`, swapped for `PodiumStage` once the game is `ended`),
-`GameFooter` (controls), `PlayersModal`, `SettingsModal`. None of them import from `lib/` — if a
-control needs a mutation, add it to `useGameActions` and pass the handler down.
+Children: `GameStage` (the `<main>`, → `PodiumStage` once `ended`), `GameFooter`, `PlayersModal`,
+`SettingsModal`. None import from `lib/` — a control needing a mutation gets a handler from
+`useGameActions`.
 
 ---
 
 ## The single source of truth: one `lobbies` row
 
-**The entire game state lives in one Postgres row.** There is no server-side game logic — every
-client mirrors that row over Supabase Realtime and the clients themselves decide what to write.
+**The entire game state lives in one Postgres row.** No server-side logic — every client mirrors the
+row over Realtime and decides what to write.
 
 ```
 lobbies
-  code           text unique   -- 4-digit, generated by codeGenerator.ts
-  password_hash  text          -- bcrypt, checked client-side in useJoinGameForm
-  is_public      boolean
-  category       jsonb         -- the chosen Spotify playlist { value, label }
-  game_state     jsonb         -- gameStateProps: status, mode, questionMode, round, duration,
-                               --   roundStartedAt/pausedElapsedMs (the round clock)…
-  players        jsonb         -- playerProps[]: id, pseudo, host, score, answer, roundPoints…
-  music_queue    jsonb         -- playlistQueueProps: { items, current } — `current` is written
-                               --   only by startRound, derived from game_state.round
+  code          text unique  -- 4-digit, codeGenerator.ts
+  password_hash text         -- bcrypt, checked client-side in useJoinGameForm
+  is_public     boolean
+  category      jsonb        -- chosen playlist { value, label }
+  game_state    jsonb        -- gameStateProps: status, mode, questionMode, round, duration,
+                             --   roundStartedAt/pausedElapsedMs (round clock)…
+  players       jsonb        -- playerProps[]: id, pseudo, host, score, answer, roundPoints…
+  music_queue   jsonb        -- playlistQueueProps { items, current }; current written only by startRound
 ```
 
-Four consequences that matter every time you touch this:
-
-1. **`rowToLobby` (`src/lib/lobbies/mappers.ts`) is the only DB→app boundary, and it renames
-   fields.** `is_public` → `public`, `code` → `generatedCode`, `players` → `player` (singular, but
-   it is an array). Always convert at that boundary; never pass a raw row into the UI.
-
-2. **Every mutation is a read-modify-write on jsonb, so concurrent writers clobber each other.**
-   `findLobbyRowByCode` → mutate in JS → `update`. Two clients doing this at once means one write
-   is silently lost. This is *the* reason several operations are host-only.
-
-3. **RLS is wide open.** Anyone holding the anon key can read, insert, update or delete any lobby.
-   This is prototype-grade and documented as such in `schema.sql`. Note that a blocked delete looks
-   identical to a successful one, which is why `deleteLobby` checks the returned `count`.
-
+1. **`rowToLobby` (`mappers.ts`) is the only DB→app boundary, and it renames:** `is_public`→`public`,
+   `code`→`generatedCode`, `players`→`player` (singular name, still an array). Never pass a raw row to the UI.
+2. **Every mutation is a read-modify-write on jsonb, so concurrent writers clobber each other** — this
+   is why several ops are host-only.
+3. **RLS is wide open** — anyone with the anon key can read/insert/update/delete any lobby
+   (prototype-grade). A blocked delete looks like success, so `deleteLobby` checks the returned `count`.
 4. **`replica identity full` is set** so DELETE realtime events carry every column — otherwise a
-   `filter: code=eq.xxxx` on DELETE would never match and clients would never learn the lobby closed.
+   `code=eq.xxxx` filter on DELETE never matches and clients never learn the lobby closed.
 
-A second table, `spotify_catalog_token`, has RLS enabled with **no policies**, making it reachable
-only by the Edge Function's service-role key.
+Two service-role-only tables have RLS on with **no policies**: `spotify_catalog_token`,
+`youtube_match_cache`.
 
 ---
 
 ## Game loop
 
 ```
-waiting  ──start──►  playing  ◄──resume/pause──►  paused
-   ▲                    │
-   │                 round ends
-   │                    ▼
-   │                finished  ──new round──►  playing
-   │                    │
-   │              (that was the last round)
-   │                    ▼
-   └──nouvelle partie── ended
+waiting ──start──► playing ◄──resume/pause──► paused
+   ▲                  │
+   │              round ends ──► finished ──new round──► playing
+   │                                │ (last round)
+   └────── nouvelle partie ─────── ended
 ```
 
-The status lives in `game_state.status` (`GameStatus` in `src/types/index.ts`).
+Status is `game_state.status` (`GameStatus`). **Host presses a button** → `hostActionByStatus`
+(`useGameActions.ts`) maps status to a handler. Starting the game and the next round are the **same
+op**, `startRound`.
 
-**Host presses a button** → `hostActionByStatus` (`src/hooks/useGameActions.ts`) maps the
-current status to a handler. Starting the game and starting the next round are the **same
-operation**, `startRound`.
+- **`finished` on the last round → `ended`, not another round.** `isFinalRound` (`src/util/`) decides;
+  `hostActionByStatus` swaps `startRound` for a write of `Ended`. Bounded by **queue length as well as
+  `totalRounds`** (playlist may yield fewer tracks); without it `startRound` replays the final track forever.
+- **`ended` is a row status, not local state** — every client must reach the podium together. Resolves to
+  the **`pause`** intent. `Game.tsx` renders `PodiumStage`; `GameFooter` withholds the host action +
+  "relancer la partie" so the podium owns the sole CTA, gated on **`isHostPlayer`**.
+- **`startRound` is one atomic write** — answers, question, `round`, `status`, round clock and
+  `music_queue.current` in a single `update`. **`current` is derived from `round`, never incremented**
+  (per-client increments raced and permanently skewed the queue); and clients **never see a half-started
+  round** (splitting it let `playing` arrive before the track).
+- **The countdown is derived, not decremented.** `roundStartedAt` is the epoch ms of position 0; clients
+  compute `remainingSeconds` (`src/lib/playback/`) against it. `pauseRound` freezes elapsed into
+  `pausedElapsedMs`; `resumeRound` rewinds `roundStartedAt` by it. A skewed client clock skews its own
+  countdown — values clamp to `[0, duration]`.
+- **Only the host ends the round** (scoring rewrites the whole `players` array; concurrent writers clobber
+  scores). In `useRoundLifecycle`, gated on `isHostPlayer`. Two triggers funnel through `finalizeRound`:
+  countdown hits 0, or every player answered.
+- **Double-payout is guarded twice:** `roundFinalizedRef` and a `status === Finished` check in
+  `finishRound`. The ref is a **boolean, not a round number** — a restart resets `round` to 0, and a
+  remembered number would block the new game's round 1. `finalizeRound` keeps empty `useCallback` deps and
+  reads the track from `roundTrackRef` (it's a dep of both round-ending effects).
+- **`finishRound` writes scores and status in one update**, so the reveal never shows stale points.
+- **The track plays through the reveal:** `finished` resolves to `idle` (players hear the song), not
+  `play` — `elapsedMs` has passed the duration, so a position would seek past the end. Next `startRound`
+  replaces it; "relancer la partie" (→ `waiting`) stops it.
 
-**`finished` on the last round leads to `ended`, not to another round.** `isFinalRound`
-(`src/util/index.ts`) answers "was that the last one?", and `hostActionByStatus` swaps
-`startRound` for a write of `GameStatus.Ended`; `HostActionButton` relabels itself "Voir le
-classement final". Without that swap `startRound` would run past the end of the queue and
-`current = Math.min(round, items.length - 1)` would replay the final track forever. The check is
-bounded by the **queue length as well as `totalRounds`**, for the case where the playlist yielded
-fewer tracks than the host asked for.
-
-`ended` is a status in the row rather than local state precisely because every client has to reach
-the podium together; nothing else can write it, so `useLobbyRealtime`'s "back to `waiting` means a
-restart" assumption still holds. It resolves to the **`pause`** intent — unlike `finished`, the
-game is over and the music should stop. `Game.tsx` renders `PodiumStage` instead of `GameStage`
-while it is set, and `GameFooter` withholds both the host action and "relancer la partie" so the
-podium owns the single call to action. That button is gated on **`isHostPlayer`**: restarting
-writes settings, it is not playback.
-
-**`startRound` is one atomic write.** Cleared answers, the question, `round`, `status`, the round
-clock and `music_queue.current` all go out in a single `update`. Two rules hold it together:
-
-- **`current` is derived from `round`, never incremented.** It used to be advanced from
-  the page by *every* client, so N browsers each ran a read-modify-write on `music_queue`
-  from their own snapshot — a single stale writer skipped a track (or rewound the queue) for
-  everyone, permanently, since the queue holds exactly `totalRounds` items.
-- **Clients never see a half-started round.** This was four sequential writes, so `playing`
-  arrived before the new track and the countdown started a round-trip ahead of the audio.
-
-**The countdown is derived, not decremented.** `game_state.roundStartedAt` is the epoch ms at
-which the round's track should be at position 0; every client computes
-`remainingSeconds` (`src/lib/playback/`) against it, so nobody drifts and a mid-round refresh
-lands on the right second. `pauseRound` freezes the elapsed time into `pausedElapsedMs`;
-`resumeRound` rewinds `roundStartedAt` by it, so paused time never counts.
-
-The one trade-off: the timestamp comes from the writing client's `Date.now()`, so a player
-whose system clock is badly skewed sees a skewed countdown. Values are clamped to
-`[0, duration]`, so it degrades rather than breaking.
-
-**Only the host ends the round.** Scoring reads and rewrites the whole `players` array, so if
-each browser did it they would race each other into clobbering scores. Non-host clients just
-sit at 0 and wait for the realtime update. This lives in `useRoundLifecycle`, gated on
-`isHostPlayer`.
-
-Two things can end a round, and both funnel through `finalizeRound`:
-- the countdown reaching 0
-- every player having answered — no reason to run the clock down
-
-Double-payout is guarded twice: `roundFinalizedRef` in `useRoundLifecycle`, and a
-`status === Finished` check inside `finishRound`. The ref is deliberately a **boolean flag, not a
-round number** — "relancer la partie" resets `round` to 0, and a remembered number would then match
-the new game's first round and block it from ever ending.
-
-`finalizeRound` keeps **empty `useCallback` deps** and reads the track from `roundTrackRef`. It is a
-dependency of both round-ending effects, so a new identity per queue update would re-run them. The
-ref is not redundant just because `currentTrack` is a hook parameter.
-
-`finishRound` writes scores **and** status in a single update, so the reveal never appears with the
-previous round's points still on screen.
-
-**The track keeps playing through the reveal.** `finished` resolves to the `idle` intent, not
-`pause` — players get to hear the song they were guessing at. It has to be `idle` rather than a
-`play`: by then `elapsedMs` has run past the round duration and keeps growing, so re-issuing a
-position would seek past the end of the track. The next `startRound` replaces it, and "relancer la
-partie" (→ `waiting`) stops it.
-
-### `mode` vs `questionMode`
-
-`game_state` carries both, and the difference is load-bearing:
-
-- `mode` — what the host configured (may be `random`).
-- `questionMode` — what *this* round actually asks about.
-
-They are identical except under `Aleatoire`, where `resolveGameQuestion` (`src/util/index.ts:58`)
-draws a mode per round. **Both must be persisted**: only the question *text* is stored otherwise,
-and the scorer cannot grade an answer from text alone. `Titre` and `Album` are excluded from random
-draws (`RANDOM_MODE_EXCLUSIONS`) because one only works on soundtrack playlists and the other is
-unscored — landing on either would hand players an unwinnable round.
+**`mode` vs `questionMode`** (both in `game_state`, both persisted): `mode` is what the host configured
+(may be `random`); `questionMode` is what *this* round asks. Identical except under `Aleatoire`, where
+`resolveGameQuestion` (`src/util/`) draws a mode per round — both must persist since the scorer can't
+grade from question text alone. `Titre` and `Album` are excluded from random draws
+(`RANDOM_MODE_EXCLUSIONS`): one needs soundtrack playlists, the other is unscored.
 
 ---
 
 ## Scoring (`src/lib/scoring/`)
 
-Pure and dependency-free. If tests are ever added, start here — it is the one part of the app that
-is trivially unit-testable.
-
-**Points** (`points.ts`):
+Pure and dependency-free — if tests are ever added, start here.
 
 | Mode | Exact | Closest |
 | --- | --- | --- |
@@ -240,259 +164,129 @@ is trivially unit-testable.
 | Décennie | 5 | 3 |
 | Album | **0** | — |
 
-`Album` is **deliberately unscored** — absence from `MODE_POINTS` means zero points, not a bug.
-
-**Numeric modes** (`Année`, `Décennie`) are graded across the whole table at once, not per player:
-if anyone hits it exactly, the closest-guess consolation is cancelled for everyone else.
-Unparseable answers sit the round out rather than counting as infinitely distant.
-
-**Text modes** go through `normalizeText` (`normalize.ts`), which strips Spotify decoration players
-never hear — `- Remastered 2011`, `(feat. X)`, `(From "Shrek")` — plus accents, punctuation and
-leading articles, then compares with hand-rolled Levenshtein at `similarity >= 0.85`.
-
-Two things not to "fix":
-
-- **`expectedAnswer` shares its per-mode switch with the scorer on purpose**, so the answer shown
-  during the reveal can never drift from the one that was actually graded. Keep them together.
-- **`parseReleaseYear` slices the string instead of using `new Date()`.** A date-only string parses
-  as UTC midnight, which `getFullYear()` renders in local time — `"1984-01-01"` reads back as 1983
-  anywhere west of Greenwich.
+- **`Album` is deliberately unscored** — absence from `MODE_POINTS` means zero, not a bug.
+- **Numeric modes (`Année`, `Décennie`) grade across the whole table at once:** if anyone is exact, the
+  closest-guess consolation is cancelled for everyone. Unparseable answers sit the round out.
+- **Text modes** go through `normalizeText` (`normalize.ts`) — strips Spotify decoration players never
+  hear (`- Remastered 2011`, `(feat. X)`), accents, punctuation, leading articles — then Levenshtein at
+  `similarity >= 0.85`.
+- **`expectedAnswer` shares its per-mode switch with the scorer on purpose**, so the revealed answer
+  can't drift from the graded one. Keep them together.
+- **`parseReleaseYear` slices the string instead of `new Date()`** — a date-only string parses as UTC
+  midnight, so `getFullYear()` renders `"1984-01-01"` as 1983 west of Greenwich.
 
 ---
 
 ## Playback: YouTube, not Spotify
 
-Audio used to play through the Spotify Web Playback SDK in exactly one browser tab — the host's.
-That had three hard problems: only one device ever produced sound (so "anyone can host" never
-meant "everyone hears the music" unless they shared a room), iOS Safari doesn't support the SDK at
-all, and there's no way to relay Spotify audio from a server — the Web API/SDK never expose a raw
-stream. YouTube IFrame embeds need no per-user login, so **every client runs its own player and
-produces its own audio locally** — no server relay, and no Spotify auth anywhere in the frontend
-anymore.
+**Every client runs its own `YT.Player`** (playback used to be a single Spotify SDK tab) — no relay,
+no Spotify auth in the frontend.
 
-**Spotify is metadata-only now.** `src/lib/spotify/playlist.ts` (`fetchPlaylistTracks`) still calls
-the `spotify-playlist` Edge Function for title/artist/release date/album/cover — nothing about that
-pipeline changed, and `src/lib/scoring/` still grades off it exactly as before. What changed is
-*what plays*: `regenerateMusicQueue` (`src/lib/lobbies/rowOperations.ts`) additionally calls
-`matchYoutubeVideos` (`src/lib/youtube/search.ts` → the `youtube-match` Edge Function) to attach a
-`youtubeIds: string[]` list of candidate videos to each track before writing the queue. A track with
-no surviving candidate at all is dropped rather than queued unplayable, which is why the fetch asks
-Spotify for `rounds * 1.3` tracks instead of exactly `rounds`; a queue that still comes up short of
-`totalRounds` is already a handled case (`isFinalRound` is bounded by queue length, see the Game
-loop section).
-
-**Matching is two-stage, because the search endpoint's embeddability flag is a hint, not a fact.**
-`youtube-match` first calls `search.list` with `videoEmbeddable=true` for up to 8 raw candidates per
-track, then verifies every candidate across the whole batch in one (or a few, chunked at 50 ids)
-`videos.list?part=status` call and keeps only the ones whose *current* `status.embeddable` is
-actually `true` — the search index lags behind a video's real, live embed status, which is exactly
-what used to surface as "cette vidéo ne peut pas être lue ici" despite the search filter already
-being on. The `videos.list` verification costs 1 quota unit per up-to-50 ids, negligible next to the
-100 units per search call. Up to `VERIFIED_CANDIDATES_PER_TRACK` (5) survivors are kept per track, in
-original search-relevance order — `musicItemsProps.youtubeIds` carries that whole list, not just a
-single winner, precisely so a bad pick isn't a dead end.
-
-**Neither API call in `youtube-match` swallows its own errors, on purpose.** Both `searchVideoIds`
-and `fetchEmbeddableIds` only throw on an HTTP-level failure (quota exhausted, bad key), never on a
-genuine empty result — an early version caught those per-track/per-chunk and treated them as "no
-match," which made a systemic failure (quota exceeded on every call) indistinguishable from "this
-whole playlist has no YouTube matches": `regenerateMusicQueue` silently wrote an empty
-`music_queue.items` with no error anywhere. Letting a real API failure fail the whole request (500,
-surfaced as "Impossible de créer le lobby" client-side) is worse UX for a transient blip but is what
-makes a systemic problem loud enough to actually notice and debug.
-
-**`isHost` doesn't exist anymore — there's only `isHostPlayer`.** Playback needing "a connected
-Spotify account" was the entire reason for that split; with no device and no login, the host flag
-alone gates everything the old `isHost` did (playback controls, volume, settings panel, skip/restart)
-same as it already gated scoring and kick/promote. If you find yourself wanting to reintroduce a
-narrower "is this browser capable of X" flag for playback, that's very likely the same bug this
-section used to warn about, just inverted.
-
-**No cross-page singleton, on purpose.** The Spotify device used to live in a module-level store
-outliving any single page, because recreating the SDK player raced Spotify's backend teardown of
-the previous device. A `YT.Player` has no server-side device to race — `useYoutubePlayer` owns a
-plain component-scoped ref, created while `enabled` and destroyed on unmount. Simpler by
-construction, not by omission.
-
-**Every player runs its own reconciler.** `useYoutubePlayer({ enabled: true })` is still called
-unconditionally in `Game.tsx` for *every* player (not gated on host), same as the old Spotify
-pre-warm — except now every tab's player actually produces audio, not just the host's.
-`useYoutubePlayback` applies `resolvePlaybackIntent` (`src/lib/playback/`, unchanged — it already
-took an opaque track id and doesn't care whether that id is a Spotify track or a YouTube video, so it
-takes the *first* candidate purely as a stable identity for its own `appliedRef` dedup, not
-necessarily the one that ends up playing) against that player, using `appliedRef` to dedupe identical
-intents exactly like the old `useHostPlayback` did. What's gone is the host-handoff bookkeeping
-(`wasHostPlayerRef`, `wasHostWithDeviceRef`): since every client reconciles independently against the
-same row instead of one client inheriting another's device state, there's no "did this browser ever
-populate `appliedRef`" question to answer anymore.
-
-**A track's candidates are a runtime fallback chain, not just a matching-time list.**
-`useYoutubePlayer` keeps its own `attemptRef` (candidates, current index, position) separate from
-`useYoutubePlayback`'s `appliedRef`. When the player's `onError` fires — a candidate that passed
-`videos.list` verification can still fail live (geo-restriction, a claim landing after the check) —
-the hook silently advances to the next candidate and retries, and only surfaces a toast once every
-candidate in the list is exhausted. `useYoutubePlayback` never sees this happen: `resume()` resolves
-once it *starts* an attempt, not once one actually succeeds, so the reconciler's job stays "kick off
-playback for this track once" regardless of how many candidates it takes underneath.
-
-**Resume-in-place mirrors the old Spotify behavior, for the same reason.** `useYoutubePlayer.resume`
-checks whether the player already holds the requested video id; if so it just calls `playVideo()`
-without seeking, instead of reloading at the freshly computed position. This isn't optional
-politeness — `resumeRound` rewinds `roundStartedAt` by `pausedElapsedMs` so the newly computed
-position matches wherever playback was paused, and an unconditional seek-on-resume would be
-redundant at best and a stutter at worst.
-
-**The audio-unlock gesture is new, and is the one thing YouTube needs that Spotify didn't.**
-Browsers (iOS Safari in particular) only allow the *first* play to start inside a user-gesture call
-stack — and it has to be a real play of real content: calling `playVideo()`/`pauseVideo()` on a
-player with nothing cued doesn't "prime" anything, it just throws the same "invalid parameter" error
-as any other call with no video loaded. So `unlock(candidates, positionSeconds)` **is** the round's
-actual first playback attempt, not a separate step — it's exactly `resume()` under the hood, marking
-`isUnlocked` first. `Game.tsx` only offers this once one exists: `canUnlock` is
-`resolvePlaybackIntent(gameState, currentTrack?.youtubeIds[0]).kind === "play"`, computed fresh on
-every render so the click always acts on "now," never a stale render's position. `GameFooter`'s
-volume slot reflects three states, not two: nothing while `!canUnlock` (no track to unlock with
-yet — typically `waiting`/`paused`), the "Activer le son" `IconButton` while `canUnlock &&
-!isUnlocked`, and `YoutubeVolumeControl` once `isUnlocked`. `useYoutubePlayback` early-returns while
-`!isUnlocked` — skip this gate and playback silently never starts on strict browsers instead of
-erroring loudly.
-
-**A fresh page load always needs one click, and that's not fixable from here.** Every full reload
-resets the browser's own "has this frame seen a user gesture" state, YouTube embeds included —
-no amount of client-side bookkeeping (a stored flag, a prior session's unlock) changes what the
-browser itself remembers after a reload, because the permission is enforced by the browser process,
-not by anything this app controls. What *is* fixable, and was the actual bug: the click used to throw
-immediately because it primed an empty player instead of loading the real track, so it looked broken
-rather than just "needs the one click every fresh load genuinely needs."
-
-**Host handoff still freezes the round clock.** `promotePlayer` still force-pauses a `playing` game
-and freezes `pausedElapsedMs` on handoff — that part didn't change, because the round clock lives in
-the row regardless of what's driving playback. What it no longer needs to reason about is a device:
-every client, promoted host or not, was already running its own reconciler against the same row.
-Disconnects that skip the normal leave path (closed tab, crash, lost network) are still caught by
-Supabase presence in `useGameActions`; `pickSuccessorPlayer` still picks deterministically (lowest
-id) so exactly one client acts without coordination.
-
-**YouTube Data API quota is a known, accepted constraint, not a bug to fix here.** Each
-`youtube-match` call spends 100 quota units per track searched (10k/day free tier ⇒ roughly 3–5 full
-queue builds/day). Fine for a private, friends-only game; a future cache of
-`spotify track id → youtube id` in Postgres would remove repeat lookups if that ever gets tight.
+- **Spotify is metadata-only.** `fetchPlaylistTracks` (`spotify/playlist.ts`) supplies
+  title/artist/release date/album/cover, which scoring grades off. What plays is a YouTube video:
+  `regenerateMusicQueue` attaches a `youtubeIds: string[]` candidate list per track. Tracks with no
+  candidate are dropped, so the fetch asks Spotify for `rounds * 1.3`; a short queue is handled
+  (`isFinalRound` bounded by queue length).
+- **Lobby creation is cache-only → zero YouTube quota.** `regenerateMusicQueue` calls
+  `matchYoutubeVideos(tracks, { cacheOnly: true })`; `youtube-match` serves candidates purely from
+  `youtube_match_cache` — no search, no verify, no API key. Uncached tracks are dropped; if *nothing* is
+  cached, it throws a French error rather than write an unplayable lobby. Fill the cache first with
+  `npm run warm-cache`.
+- **Warming (`scripts/warm-youtube-cache.mjs`, `npm run warm-cache`).** Default mode resolves candidate
+  ids via YouTube's public innertube search (**zero Data API quota**) and hands them to `youtube-match`
+  to verify + cache. Fetches every playlist in full, dedups across playlists, records progress locally so
+  re-runs never re-resolve. `--api-search` uses the metered 100-unit `search.list` path.
+- **`youtube-match` search path is two-stage:** `search.list?videoEmbeddable=true` for up to 8 raw
+  candidates, then a batched `videos.list?part=status` (chunked at 50) keeps only currently-embeddable
+  ones (the search index lags real status). Up to `VERIFIED_CANDIDATES_PER_TRACK` (5) survivors in
+  relevance order; `youtubeIds` carries the whole list so a bad pick isn't a dead end. Its API/cache calls
+  **throw only on HTTP failure** (quota, bad key), never on empty results — a systemic failure (500) stays
+  distinct from "no matches" instead of silently writing an empty queue.
+- **Only `isHostPlayer` exists — no `isHost`.** The host flag gates everything (playback, volume,
+  settings, skip/restart, scoring, kick/promote). A narrower "can this browser play" flag is likely the
+  old device-gating bug inverted.
+- **Every player runs its own reconciler.** `useYoutubePlayer` owns a plain component-scoped ref (no
+  cross-page singleton needed), called unconditionally in `Game.tsx`. `useYoutubePlayback` applies
+  `resolvePlaybackIntent` against it, deduping via `appliedRef` (keyed on the first candidate as a stable
+  identity). Each client reconciles independently — no host-handoff bookkeeping.
+- **Candidates are a runtime fallback chain.** On `onError` (a verified candidate can still fail live)
+  `useYoutubePlayer` advances to the next via `attemptRef`, toasting only once all are exhausted — the
+  reconciler never sees this (`resume()` resolves once it *starts* an attempt). `resume` also plays in
+  place without seeking when the player already holds the id (else the `resumeRound` rewind would stutter).
+- **Audio-unlock gesture:** browsers only allow the first play inside a user-gesture stack playing real
+  content, so `unlock(...)` **is** the round's first playback (`resume()` marking `isUnlocked`), not
+  priming. `Game.tsx` offers it only when `canUnlock`; `useYoutubePlayback` early-returns while
+  `!isUnlocked`. Every fresh page load needs one click — the browser resets user-gesture state on reload.
+- **Host handoff freezes the round clock.** `promotePlayer` force-pauses a `playing` game and freezes
+  `pausedElapsedMs`. Ungraceful disconnects are caught by Supabase presence in `useGameActions`;
+  `pickSuccessorPlayer` picks deterministically (lowest id).
 
 ---
 
 ## Conventions
 
-**Types.** `somethingProps` naming. Enums are const objects plus a derived union, never TS `enum`:
-
-```ts
-export const GameStatus = { Waiting: "waiting", /* … */ } as const;
-export type GameStateEnum = (typeof GameStatus)[keyof typeof GameStatus];
-```
-
-`verbatimModuleSyntax` is on, so type-only imports **must** use `import type`.
-
-**Formatting.** Tabs for indentation. Double quotes in `.ts`/`.tsx` code, single quotes for JSX
-attributes (`className='…'`).
-
-**Styling.** Tailwind v4 with design tokens declared in `@theme` in `src/index.css`:
-`bg-deep`, `purple`, `purple-light`, `purple-soft`, `accent-blue`, `lavender`, and the
-`font-display` / `font-body` families. **Use the tokens, never raw hex.** Opacity modifiers
-(`text-lavender/68`, `bg-lavender/5`) are the house style for surfaces and muted text.
-
-Four `@utility` classes in the same file carry the strings that repeat across components — reach
-for these before pasting a long `className`:
-
-| Utility | Where |
-| --- | --- |
-| `glass-panel` | Every bordered translucent surface (answer box, settings panel, scoreboard, avatar strip). |
-| `field-input` | Text/select inputs. **Surface and focus ring only** — padding and font size stay per-site, because 4 of the 5 call sites differ and overriding a custom utility depends on emitted-CSS order, not the order you write the classes. |
-| `field-label` | Form field labels. |
-| `control-shell` | The bordered box around a toggle or slider. |
-
-**Shared UI.** Buttons come from `src/components/Button.tsx`: `PrimaryButton`, `SecondaryButton`,
-and `IconButton` for square icon-only controls (it takes `label` — used as both `aria-label` and
-`title` — plus `icon`). Don't hand-roll one. `DurationSlider` is the shared extract-length control;
-give each call site a distinct `id`. Icons are inline SVG components in `src/components/icons/`.
-
-**Modals** portal into `#modal-root` (declared in `index.html`) and handle focus, Escape and
-scroll-lock themselves. `Modal.tsx` also exports `ModalHeader` (title + close), `ModalBody` (the
-scrolling region) and `ModalCloseButton` — compose those rather than rebuilding the chrome.
-
-**Toasts.** `showToast(text, variant)` from `src/lib/toast.ts`, variants `join | leave | closed | error`.
-
-**Commits.** History uses a `[FEAT]` / `[FIX]` prefix; subjects are often French.
+- **Types.** `somethingProps` naming. Enums are const objects + a derived union, never TS `enum`:
+  ```ts
+  export const GameStatus = { Waiting: "waiting", /* … */ } as const;
+  export type GameStateEnum = (typeof GameStatus)[keyof typeof GameStatus];
+  ```
+  `verbatimModuleSyntax` is on, so type-only imports **must** use `import type`.
+- **Formatting.** Tabs. Double quotes in `.ts`/`.tsx`, single quotes for JSX attributes.
+- **Styling.** Tailwind v4 with `@theme` tokens in `src/index.css` (`bg-deep`, `purple`, `purple-light`,
+  `purple-soft`, `accent-blue`, `lavender`, `font-display`/`font-body`). **Use tokens, never raw hex**;
+  opacity modifiers (`text-lavender/68`) are house style. Four `@utility` classes carry repeated strings:
+  `glass-panel` (bordered translucent surfaces), `field-input` (inputs — **surface + focus ring only**,
+  padding/font per-site), `field-label`, `control-shell` (box around a toggle/slider).
+- **Shared UI.** Buttons from `Button.tsx`: `PrimaryButton`, `SecondaryButton`, `IconButton` (square
+  icon-only; `label` = aria-label + title, plus `icon`) — don't hand-roll. `DurationSlider` is the
+  shared length control; give each call site a distinct `id`. Icons are inline SVG in
+  `src/components/icons/`.
+- **Modals** portal into `#modal-root` and handle focus/Escape/scroll-lock. `Modal.tsx` exports
+  `ModalHeader`, `ModalBody`, `ModalCloseButton` — compose those.
+- **Toasts.** `showToast(text, variant)` from `src/lib/toast.ts`; variants `join | leave | closed | error`.
+- **Commits.** `[FEAT]`/`[FIX]` prefix; subjects often French.
 
 ---
 
 ## Gotchas
 
-- **Import from the `lib/lobbies` barrel.** It re-exports everything callers need, including
-  `promotePlayer`, `updatePlayerAnswer` and `updateGameSettings`. `rowToLobby` and the
-  `rowOperations` helpers stay internal — deep-import those only from inside `lib/lobbies`.
-  `lib/scoring`'s barrel is deliberately narrow (`scoreRound`, `expectedAnswer`,
-  `parseReleaseYear`); the normalizer and points tables are internals.
-
-- **Realtime `postgres_changes` filters evaluate against the NEW row on UPDATE.** A public→private
-  toggle would never match `is_public=eq.true`, so `subscribeToPublicLobbies` subscribes to *all*
-  table changes and re-queries with the filter applied server-side instead.
-
-- **The current player's identity is a `?current=` query param**, read in `Game.tsx`. There is no
-  auth — a stale or foreign id is handled by `checkStillMember` in `useLobbyRealtime`, which treats
-  "not in the players array" as kicked.
-
-- **`createGameOptions.ts`** contains a `"Test"` playlist marked `// remove in production`.
-  `TITLE_ONLY_PLAYLISTS` in the same file lists the soundtrack playlists that offer only `Titre`,
-  keyed by playlist id — `filterGameModesForCategory` (`src/util/`) reads it. This replaced two
-  copies of a check against magic indices `musicStyle[3]` / `musicStyle[4]`.
-
-- **Read-modify-write races** — see the lobby row section above. `updateLobbyRow`
-  (`lib/lobbies/rowOperations.ts`) removes the boilerplate but **does not** make the write atomic.
-  Before adding a mutation, ask which clients can call it concurrently. The queue-advance bug is the
-  cautionary tale: an innocuous `current + 1` in a `useEffect` ran on every client at once.
-
-- **Don't split a round transition into several writes.** Every `update` is its own realtime
-  broadcast, so N writes means N renders on every client, each seeing a partial state.
-  `updateRound` / `updateGameQuestion` / `resetPlayerAnswer` were removed for this reason —
+- **Import from the `lib/lobbies` barrel** (re-exports `promotePlayer`, `updatePlayerAnswer`,
+  `updateGameSettings`, …). `rowToLobby`/`rowOperations` helpers are internal. `lib/scoring`'s barrel is
+  deliberately narrow (`scoreRound`, `expectedAnswer`, `parseReleaseYear`).
+- **Realtime `postgres_changes` filters evaluate against the NEW row on UPDATE** — a public→private
+  toggle wouldn't match `is_public=eq.true`, so `subscribeToPublicLobbies` subscribes to all changes and
+  re-queries with the filter server-side.
+- **The current player's identity is a `?current=` query param** (read in `Game.tsx`). No auth — a
+  stale/foreign id is treated as kicked by `checkStillMember` in `useLobbyRealtime`.
+- **`createGameOptions.ts`** has a `"Test"` playlist marked `// remove in production`.
+  `TITLE_ONLY_PLAYLISTS` lists soundtrack playlists offering only `Titre`, read by
+  `filterGameModesForCategory` (`src/util/`).
+- **Read-modify-write races** (see the lobby row section). `updateLobbyRow` removes boilerplate but is
+  **not** atomic — before adding a mutation, ask who can call it concurrently. Cautionary tale: a
+  `current + 1` in a `useEffect` ran on every client at once.
+- **Don't split a round transition into several writes** — each `update` is its own broadcast, so N
+  writes = N partial-state renders. `updateRound`/`updateGameQuestion`/`resetPlayerAnswer` were removed;
   `startRound` replaces all three.
-
-- **`LobbyQuestionBox` is mounted twice, and that is on purpose.** The desktop copy lives in the
-  `hidden lg:flex` left column; a second `compact` copy sits above the album art under `lg:hidden`,
-  because the left column simply does not render on a phone and mobile players had no way to
-  answer at all. Both are in the DOM at once, so each call site passes its own `inputId` — don't
-  let them share one. `GameStage` hides `PlayerAvatarList` on mobile for exactly the statuses where
-  the answer box shows (`playing` / `paused` / `finished`); the two don't fit above the cover, and
-  `waiting` keeps the strip since that's the lobby view. `compact` is not a mobile flag — the
-  desktop copy takes it too while the settings panel is expanded, which is why
-  `LobbySettingsPanel` is **controlled** from `GameStage` rather than holding its own `isOpen`.
-
-- **Mobile scrolls the stage and the footer together.** No phone fits a whole round, so `Game.tsx`
-  wraps the stage and `GameFooter` in one `overflow-y-auto` column — the "Quitter la partie" button
-  scrolls into view rather than being pinned over the content. That wrapper is `lg:contents`, which
-  dissolves it on desktop so `main` and `footer` are direct children of `PageBackground` again;
-  correspondingly the stages carry `lg:min-h-0`, not `min-h-0`, since on mobile they must take
-  their content's height and let the wrapper scroll. `PageBackground` stays `h-dvh
-  overflow-hidden` at every width — it clips the drifting background blobs, and letting *it*
-  scroll would make their negative offsets part of the scrollable area.
-
-- **`rankPlayers` (`src/util/`) returns the pre-sort index as `toneIndex`.** `PlayerAvatar` picks
-  its gradient from it, so a player keeps the same colour as the standings move. Don't re-derive it
-  by sorting and then `findIndex`-ing back.
-
-- **One pre-existing lint error**, in `LobbyQuestionBox.tsx` (`react-hooks/set-state-in-effect`:
-  clearing the answer on a new round). It predates this refactor; `npm run lint` reporting exactly
-  one problem is the clean baseline.
+- **`LobbyQuestionBox` is mounted twice on purpose** — a desktop copy (`hidden lg:flex` left column) and
+  a `compact` copy above the album art (`lg:hidden`); each passes its own `inputId`. `compact` isn't a
+  mobile flag — the desktop copy takes it while the settings panel is expanded, so `LobbySettingsPanel`
+  is **controlled** from `GameStage`. `GameStage` also hides `PlayerAvatarList` on mobile for
+  `playing`/`paused`/`finished`.
+- **Mobile scrolls stage and footer together** — `Game.tsx` wraps them in one `overflow-y-auto` column
+  (`lg:contents`, dissolves on desktop); stages carry `lg:min-h-0`. `PageBackground` stays `h-dvh
+  overflow-hidden` everywhere to clip the drifting blobs.
+- **`rankPlayers` (`src/util/`) returns the pre-sort index as `toneIndex`** — `PlayerAvatar` picks its
+  gradient from it, so a player keeps its colour as standings move. Don't re-derive via sort + `findIndex`.
+- **One pre-existing lint error** in `LobbyQuestionBox.tsx` (`react-hooks/set-state-in-effect`). Exactly
+  one problem from `npm run lint` is the clean baseline.
 
 ---
 
 ## Current state
 
-`TODO.MD` is the live roadmap — check it rather than trusting this section to stay current.
+`TODO.MD` is the live roadmap — trust it over this section.
 
-One thing is unfinished and should **not** be mistaken for a bug:
-
-- **`Album` mode awards no points** (deliberately absent from `MODE_POINTS`).
-
-One known race is **deliberately left open**: the skip button calls `finishRound` directly without
-setting `roundFinalizedRef`, so a countdown reaching 0 just before the realtime update lands can
-attempt a second payout. Only the server-side `status === Finished` guard stops it, and that is a
-read-then-write. Routing skip through `finalizeRound` would close it.
+- **`Album` mode awards no points** (deliberately absent from `MODE_POINTS`) — not a bug.
+- **One known race is left open:** the skip button calls `finishRound` without setting
+  `roundFinalizedRef`, so a countdown hitting 0 just before the update can attempt a second payout. Only
+  the server-side `status === Finished` guard stops it. Routing skip through `finalizeRound` would close it.

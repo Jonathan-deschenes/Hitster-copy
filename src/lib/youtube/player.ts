@@ -45,25 +45,31 @@ export function describeYoutubeError(code: YT.PlayerError): string {
 }
 
 /**
- * Mounts a YT.Player into a near-zero, off-screen container appended to
- * <body> — not `display:none`, since it's producing audio, not decoration.
- * No visual is needed: the cover art in AlbumArtPanel already comes from
- * Spotify's metadata.
+ * Mounts a YT.Player into a container appended to <body>. No visual is needed —
+ * the cover art in AlbumArtPanel already comes from Spotify's metadata — but the
+ * player must still be a *real, rendered* size: YouTube throttles or outright
+ * refuses playback (and can report error 150, "impossible de lire ici") in a
+ * player it deems non-viewable. So it's a full-size element moved off-screen by
+ * position, **not** hidden with `display:none`/`opacity:0` or shrunk to a couple
+ * of pixels — those all read as "not visible" to YouTube's checks.
+ *
+ * `origin` is passed explicitly: without it, YouTube can't validate the
+ * embedding page and rejects *every* video with a 150/101, independent of which
+ * video it is — the most common cause of "no track ever plays."
  */
 export function createYoutubePlayer(events: YT.Events): YT.Player {
 	const container = document.createElement("div");
 	container.style.position = "fixed";
-	container.style.bottom = "0";
-	container.style.right = "0";
-	container.style.width = "2px";
-	container.style.height = "2px";
-	container.style.opacity = "0";
+	container.style.top = "0";
+	container.style.left = "-9999px";
+	container.style.width = "320px";
+	container.style.height = "180px";
 	container.style.pointerEvents = "none";
 	document.body.appendChild(container);
 
 	return new window.YT.Player(container, {
-		height: "2",
-		width: "2",
+		height: "180",
+		width: "320",
 		playerVars: {
 			autoplay: 0,
 			controls: 0,
@@ -71,6 +77,7 @@ export function createYoutubePlayer(events: YT.Events): YT.Player {
 			fs: 0,
 			modestbranding: 1,
 			playsinline: 1,
+			origin: window.location.origin,
 		},
 		events,
 	});

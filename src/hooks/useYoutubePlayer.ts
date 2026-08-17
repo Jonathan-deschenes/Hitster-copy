@@ -114,7 +114,6 @@ export function useYoutubePlayer({ enabled }: UseYoutubePlayerOptions) {
 			}
 
 			if (currentVideoId && candidates.includes(currentVideoId)) {
-				attemptRef.current = null;
 				player.playVideo();
 				return true;
 			}

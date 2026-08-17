@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Local resume state for scripts/warm-youtube-cache.mjs
+scripts/.youtube-cache-progress.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -89,14 +89,27 @@ export async function regenerateMusicQueue(
 		category.value,
 		Math.ceil(rounds * QUEUE_BUFFER_RATIO),
 	);
+	// Cache-only: a lobby is built purely from tracks already warmed into the
+	// YouTube cache, so creating a game never spends search quota. Tracks not yet
+	// cached come back empty and are dropped below — warm the cache ahead of time
+	// with scripts/warm-youtube-cache.mjs.
 	const matches = await matchYoutubeVideos(
 		tracks.map((track) => ({ id: track.id, name: track.name, artist: track.artist })),
+		{ cacheOnly: true },
 	);
 
 	const matched: musicItemsProps[] = tracks
 		.map((track) => ({ ...track, youtubeIds: matches[track.id] ?? [] }))
 		.filter((track): track is musicItemsProps => track.youtubeIds.length > 0)
 		.slice(0, rounds);
+
+	// An empty queue is an unplayable game — surface it clearly instead of
+	// writing a lobby nobody can start. Most likely the playlist isn't cached yet.
+	if (matched.length === 0) {
+		throw new Error(
+			"Aucune musique en cache pour cette playlist. Réessaie une fois la mise en cache terminée.",
+		);
+	}
 
 	const music_queue: playlistQueueProps = {
 		items: shuffle(matched),

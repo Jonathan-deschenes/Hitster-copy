@@ -64,6 +64,21 @@ alter table public.spotify_catalog_token enable row level security;
 alter table public.lobbies
   add column if not exists music_queue jsonb not null default '{"items":[],"current":0}'::jsonb;
 
+-- Caches the resolved, embed-verified YouTube video ids for a Spotify track so
+-- youtube-match can skip the 100-unit search.list call on every track it has
+-- already seen. Keyed by Spotify track id (not playlist), so a track shared
+-- across playlists is resolved once. `youtube_ids` holds the verified candidate
+-- list (up to VERIFIED_CANDIDATES_PER_TRACK), same order the search returned.
+create table if not exists public.youtube_match_cache (
+  spotify_track_id text primary key,
+  youtube_ids      text[] not null,
+  updated_at       timestamptz not null default now()
+);
+
+-- RLS enabled with no policies: unreachable via the anon key, only the Edge
+-- Function (service role key) can read/write it -- same as spotify_catalog_token.
+alter table public.youtube_match_cache enable row level security;
+
 -- ---------------------------------------------------------------------------
 -- Scheduled cleanup of abandoned lobbies
 -- ---------------------------------------------------------------------------
