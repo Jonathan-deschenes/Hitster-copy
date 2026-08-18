@@ -1,13 +1,23 @@
 import { GameMode } from "../../types";
-import type { GameModeEnum, musicItemsProps, playerProps } from "../../types";
-import { isTextMatch, isTitleMatch } from "./normalize";
+import type {
+	GameModeEnum,
+	gameStateProps,
+	musicItemsProps,
+	playerProps,
+} from "../../types";
+import { isTextMatch, matchTitleTier, PARTIAL_MAX_RATIO } from "./normalize";
 import {
 	decadeOf,
 	parseAnswerDecade,
 	parseAnswerYear,
 	parseReleaseYear,
 } from "./parse";
-import { CLOSEST_POINTS, MODE_POINTS } from "./points";
+import {
+	CLOSEST_POINTS,
+	MODE_POINTS,
+	RANK_BONUS,
+	SPEED_BONUS_RATIO,
+} from "./points";
 
 export type roundResultProps = {
 	/** Points won this round. Added on top of the running score by the caller. */
@@ -93,6 +103,67 @@ function scoreNumericMode(
 }
 
 /**
+ * Rewards answering early: up to `SPEED_BONUS_RATIO` extra, scaled by how
+ * much of the round's configured duration was left when the player
+ * answered. Applies uniformly to whatever `results` already holds — exact
+ * and partial title/song matches, artist matches, numeric exact-or-closest
+ * guesses alike — so it also breaks the numeric modes' pre-existing ties
+ * between simultaneous exact (or simultaneous closest) guesses.
+ *
+ * Silently skips a player when there's nothing to time against: an older
+ * lobby row with no `roundStartedAt`, or a player who scored without a
+ * recorded `answeredAt`.
+ */
+function applyTimeBonus(
+	results: Record<string, roundResultProps>,
+	players: playerProps[],
+	gameState: gameStateProps | undefined,
+) {
+	const roundStartedAt = gameState?.roundStartedAt;
+	if (roundStartedAt == null) return;
+
+	const durationMs = (gameState?.duration ?? 30) * 1000;
+	if (durationMs <= 0) return;
+
+	for (const player of players) {
+		const result = results[player.id];
+		if (!result || result.points <= 0) continue;
+		if (player.answeredAt == null) continue;
+
+		const elapsedMs = Math.min(
+			durationMs,
+			Math.max(0, player.answeredAt - roundStartedAt),
+		);
+		const remainingFraction = 1 - elapsedMs / durationMs;
+		const bonus = Math.round(result.points * SPEED_BONUS_RATIO * remainingFraction);
+		if (bonus > 0) result.points += bonus;
+	}
+}
+
+/**
+ * A flat, mode-independent bonus for the 1st/2nd/3rd player to score any
+ * points this round, by answer order. Over a long game the continuous
+ * time bonus above barely separates two "fast" answers a couple of seconds
+ * apart — a flat placement bonus gives a bigger, more consistent gap that
+ * stays visible over many rounds, on top of (not instead of) the continuous
+ * one. Ranked purely by `answeredAt`, independent of the round clock, so it
+ * still applies even without a `gameState`/`roundStartedAt` to time against.
+ */
+function applyRankBonus(
+	results: Record<string, roundResultProps>,
+	players: playerProps[],
+) {
+	const scorers = players
+		.filter((player) => (results[player.id]?.points ?? 0) > 0 && player.answeredAt != null)
+		.sort((a, b) => (a.answeredAt as number) - (b.answeredAt as number));
+
+	scorers.forEach((player, place) => {
+		const bonus = RANK_BONUS[place];
+		if (bonus) results[player.id].points += bonus;
+	});
+}
+
+/**
  * Grades every player's answer for the round that just ended.
  *
  * Always returns an entry per player, so callers never have to handle a
@@ -104,6 +175,7 @@ export function scoreRound(
 	players: playerProps[],
 	track: musicItemsProps | undefined,
 	questionMode: GameModeEnum,
+	gameState?: gameStateProps,
 ): Record<string, roundResultProps> {
 	const results: Record<string, roundResultProps> = {};
 	for (const player of players) {
@@ -114,7 +186,7 @@ export function scoreRound(
 	if (!track || !points) return results;
 
 	if (questionMode === GameMode.Annee) {
-		return scoreNumericMode(
+		scoreNumericMode(
 			players,
 			results,
 			parseReleaseYear(track.releaseDate),
@@ -122,11 +194,9 @@ export function scoreRound(
 			points,
 			CLOSEST_POINTS[questionMode] ?? 0,
 		);
-	}
-
-	if (questionMode === GameMode.Decennie) {
+	} else if (questionMode === GameMode.Decennie) {
 		const year = parseReleaseYear(track.releaseDate);
-		return scoreNumericMode(
+		scoreNumericMode(
 			players,
 			results,
 			year === null ? null : decadeOf(year),
@@ -134,28 +204,38 @@ export function scoreRound(
 			points,
 			CLOSEST_POINTS[questionMode] ?? 0,
 		);
+	} else if (
+		questionMode === GameMode.Titre ||
+		questionMode === GameMode.Musique
+	) {
+		// Graded against both the album and the track name — Spotify sometimes
+		// tells two different stories about what a track "is" ("Tom Clancy's
+		// Siege" the soundtrack album next to "Rainbow Six Siege Main Theme"
+		// the track itself), so either recognizable name should score. A
+		// franchise-prefix or opening-words-only answer still counts, scaled
+		// down by how much of the matched name it actually covered.
+		for (const player of players) {
+			const { tier, ratio } = matchTitleTier(player.answer, track.album, track.name);
+			if (tier === "exact") results[player.id] = { points, correct: true };
+			else if (tier === "partial") {
+				const partialPoints = Math.round(points * PARTIAL_MAX_RATIO * ratio);
+				if (partialPoints > 0) {
+					results[player.id] = { points: partialPoints, correct: true };
+				}
+			}
+		}
+	} else {
+		// Artiste: any of the credited artists is enough, matched strictly —
+		// a bare first word shouldn't count as the whole artist name.
+		const targets = track.artist ?? [];
+		for (const player of players) {
+			const matched = targets.some((target) => isTextMatch(player.answer, target));
+			if (matched) results[player.id] = { points, correct: true };
+		}
 	}
 
-	// Any of the credited artists is enough; the other text modes have a
-	// single target.
-	const targets =
-		questionMode === GameMode.Artiste
-			? (track.artist ?? [])
-			: [expectedAnswer(track, questionMode)];
-
-	// Titre grades against the album, which routinely tacks a subtitle or
-	// numeral onto the franchise name — tolerate a correct, shorter answer
-	// there. Musique/Artiste keep the stricter match: a bare first word
-	// shouldn't count as the whole song or artist name.
-	const matchesTarget =
-		questionMode === GameMode.Titre ? isTitleMatch : isTextMatch;
-
-	for (const player of players) {
-		const matched = targets.some((target) =>
-			matchesTarget(player.answer, target),
-		);
-		if (matched) results[player.id] = { points, correct: true };
-	}
+	applyTimeBonus(results, players, gameState);
+	applyRankBonus(results, players);
 
 	return results;
 }

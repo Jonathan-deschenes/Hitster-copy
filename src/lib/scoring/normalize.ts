@@ -12,6 +12,13 @@
 const SIMILARITY_THRESHOLD = 0.85;
 
 /**
+ * How much of a full-tier match a "partial" (franchise/opening-words-only)
+ * match can be worth at best — scaled further down by how much of the
+ * target's content the answer actually covered. See `evaluateCandidate`.
+ */
+export const PARTIAL_MAX_RATIO = 0.5;
+
+/**
  * Decoration Spotify appends to track and album names. Matched against the
  * contents of a bracketed group or of a trailing " - " segment — never
  * against the middle of a title, so "Live and Let Die" survives while
@@ -20,6 +27,16 @@ const SIMILARITY_THRESHOLD = 0.85;
  */
 const NOISE =
 	/^(.*\b)?(remaster|remastered|live|mono|stereo|radio edit|single version|album version|deluxe|edition|bonus|anniversary|demo|instrumental|karaoke|reprise|mix|remix|edit|version|from|original motion picture|original soundtrack|sound\s*track|score|ost|vol\.?\s*\d+|\d{4})(\b.*)?$/i;
+
+/**
+ * Just the "performance variant" words within `NOISE` — remix/remaster/live
+ * credits, never the soundtrack/score/ost family. Used to rescue a bracket's
+ * leading content instead of deleting the whole thing: "(Super Mario Kart
+ * Remix)" has real title content before "Remix"; "(Original Game
+ * Soundtrack)" doesn't have anything worth keeping before "Soundtrack".
+ */
+const TRAILING_DECORATION_WORD =
+	/\s*(remaster(ed)?|live|mono|stereo|radio edit|single version|album version|deluxe|edition|bonus|anniversary|demo|instrumental|karaoke|reprise|mix|remix|edit|version|cover)\s*$/i;
 
 /**
  * Guest-credit openers. Anchored at the start of what they introduce — a
@@ -49,6 +66,69 @@ const LEADING_MUSIC_FROM = /^music\s+from\s+(the\s+)?/i;
 
 /** Grammatical articles, dropped so "The Beatles" matches "Beatles". */
 const LEADING_ARTICLES = /^(les|le|la|l|un|une|des|du|de|the|a|an)\s+(?=\S)/;
+
+/**
+ * Filler words dropped when looking for a *partial* match anywhere in a
+ * title — never for the exact/similarity check, so "Ori and the Will of the
+ * Wisps" still needs the real words to score full points, but a guess that
+ * skips "and"/"the" over an otherwise-correct run ("Ori Will of the Wisp")
+ * isn't rejected outright for it.
+ */
+const STOPWORDS = new Set([
+	"the",
+	"a",
+	"an",
+	"and",
+	"of",
+	"le",
+	"la",
+	"les",
+	"l",
+	"un",
+	"une",
+	"des",
+	"du",
+	"de",
+	"et",
+]);
+
+/**
+ * Sequel numbering Spotify sometimes spells in Roman numerals ("FINAL
+ * FANTASY VII", "God of War II") and players almost always type in Arabic
+ * ("final fantasy 7", "god of war 2"). Capped at XX — real game/film sequel
+ * numbering essentially never goes higher, and stopping there keeps this
+ * from swallowing single letters (L, C, D, M) that are common leading
+ * articles or otherwise-meaningful words elsewhere.
+ */
+const ROMAN_NUMERALS: Record<string, string> = {
+	i: "1",
+	ii: "2",
+	iii: "3",
+	iv: "4",
+	v: "5",
+	vi: "6",
+	vii: "7",
+	viii: "8",
+	ix: "9",
+	x: "10",
+	xi: "11",
+	xii: "12",
+	xiii: "13",
+	xiv: "14",
+	xv: "15",
+	xvi: "16",
+	xvii: "17",
+	xviii: "18",
+	xix: "19",
+	xx: "20",
+};
+
+function convertRomanNumerals(text: string): string {
+	return text
+		.split(" ")
+		.map((word) => ROMAN_NUMERALS[word] ?? word)
+		.join(" ");
+}
 
 /**
  * Strips bracketed groups and trailing dash segments whose contents are pure
@@ -84,6 +164,38 @@ function stripNoise(text: string): string {
 	return out;
 }
 
+/**
+ * Bracket groups `stripNoise` deletes wholesale because they end in a
+ * "performance variant" word ("(Super Mario Kart Remix)") sometimes carry
+ * real, matchable content before that word — what the track actually
+ * samples or references. Rescues that leading content as an extra candidate
+ * a player's guess can match against; never removes anything `stripNoise`
+ * already does — the primary, bracket-free title still exists alongside it.
+ */
+function extractBracketCandidates(text: string): string[] {
+	const candidates: string[] = [];
+	const bracketRegex = /[([{]([^)\]}]*)[)\]}]/g;
+	let match: RegExpExecArray | null;
+	while ((match = bracketRegex.exec(text))) {
+		const contents = match[1].trim();
+		if (!contents || FEATURING.test(contents) || !NOISE.test(contents)) continue;
+
+		const withoutDecoration = contents.replace(TRAILING_DECORATION_WORD, "").trim();
+		// Only rescue when a real decoration *word* was trimmed off the end and
+		// something substantial (2+ words) is left — "Original Game Soundtrack"
+		// has nothing to rescue: TRAILING_DECORATION_WORD doesn't match
+		// "Soundtrack" at all, so `withoutDecoration` comes back unchanged.
+		if (
+			withoutDecoration &&
+			withoutDecoration !== contents &&
+			withoutDecoration.split(/\s+/).length >= 2
+		) {
+			candidates.push(withoutDecoration);
+		}
+	}
+	return candidates;
+}
+
 /** NFD-normalizes accents and quotes; the input side of `stripNoise`. */
 function preNormalize(text: string): string {
 	return text
@@ -95,19 +207,24 @@ function preNormalize(text: string): string {
 }
 
 /**
- * Lowercases, collapses punctuation to spaces and drops a leading article.
- * The output side of `stripNoise` — split out so `isTitleMatch` can run it
- * over a sub-span of a title, not just the whole thing.
+ * Lowercases, collapses punctuation to spaces, converts Roman numerals to
+ * Arabic and drops a leading article. The output side of `stripNoise` —
+ * split out so `matchTitleTier` can run it over a sub-span of a title, not
+ * just the whole thing.
  */
-function finishNormalize(text: string): string {
-	return text
+export function finishNormalize(text: string): string {
+	const collapsed = text
 		.toLowerCase()
+		// "assassin's" -> "assassins": a possessive shouldn't tokenize into a
+		// stray "s" that misaligns word-by-word matching further down.
+		.replace(/'(?=s\b)/g, "")
 		// Everything that isn't a letter or digit becomes a separator, so
 		// "Sweet Child O' Mine" and "sweet child o mine" converge.
 		.replace(/[^a-z0-9]+/g, " ")
 		.trim()
 		.replace(LEADING_ARTICLES, "")
 		.trim();
+	return convertRomanNumerals(collapsed);
 }
 
 /**
@@ -171,80 +288,181 @@ export function isTextMatch(answer: string, target: string): boolean {
 }
 
 /**
- * Whole-word prefix containment: true when the shorter side's words are a
- * leading, in-order run of the longer side's words. Catches a franchise name
- * with no punctuation marking where it ends — "Crash Bandicoot" vs. "Crash
- * Bandicoot N. Sane Trilogy", "God of War" vs. "God of War II".
- *
- * Gated on the shorter side having at least two words, so a single common
- * word ("Dead", "The", "Call") can't blanket-match every title that starts
- * with it. `isTitleMatch` only reaches for this when there's no explicit
- * subtitle separator to split on instead — see there for why a split
- * segment doesn't need this gate.
+ * Whether two normalized words are the same word, tolerating the trailing
+ * "s" `finishNormalize` leaves behind on a possessive ("assassin's" ->
+ * "assassins") — a bare guess ("assassin") shouldn't fail matching against
+ * the franchise's own name just because it dropped that "s".
  */
-function isPrefixMatch(normalizedAnswer: string, normalizedTarget: string): boolean {
-	const answerWords = normalizedAnswer.split(" ");
-	const targetWords = normalizedTarget.split(" ");
-	const [shorter, longer] =
-		answerWords.length <= targetWords.length
-			? [answerWords, targetWords]
-			: [targetWords, answerWords];
+function wordsMatch(a: string, b: string): boolean {
+	return a === b || `${a}s` === b || `${b}s` === a;
+}
 
-	if (shorter.length < 2) return false;
-
-	return shorter.every((word, i) => word === longer[i]);
+/** A single word is only eligible on its own if it isn't a short filler word. */
+function isEligibleRun(words: string[]): boolean {
+	if (words.length >= 2) return true;
+	return words.length === 1 && words[0].length >= 4;
 }
 
 /**
- * Splits decoration-stripped text on its first subtitle separator — a colon
- * ("Call of Duty: Black Ops – Zombies") or a spaced dash ("Minecraft -
- * Volume Alpha") — into the two halves either side of it, or `null` if there
- * isn't one. Only the first separator counts, so "Black Ops – Zombies"
- * isn't split any further. Runs on the decoration-stripped text, so a colon
- * that was pure OST decoration ("Halo: Original Soundtrack") is long gone
- * by the time this looks for one — `stripNoise` already consumed it.
+ * Whether `shorter`'s words appear as an ordered, contiguous, in-place run
+ * anywhere within `longer` — not just at the very start. Catches a franchise
+ * name showing up mid-title ("Spider Man" in "Marvels Spider Man 2", the
+ * word "Marvels" leading it) as well as the classic leading case ("Crash
+ * Bandicoot" in "Crash Bandicoot N Sane Trilogy").
+ *
+ * Gated by `isEligibleRun` so a single short filler word can't blanket-match
+ * every title that happens to contain it.
+ */
+function contiguousRun(shorter: string[], longer: string[]): boolean {
+	if (!isEligibleRun(shorter)) return false;
+	for (let start = 0; start <= longer.length - shorter.length; start++) {
+		if (shorter.every((word, i) => wordsMatch(word, longer[start + i]))) return true;
+	}
+	return false;
+}
+
+type ContiguousMatch = { matched: boolean; ratio: number };
+
+/**
+ * Finds the best contiguous-run match between two already-normalized word
+ * lists, in whichever direction applies: the answer's words inside the
+ * target's (the common "opening words only" guess), or the target's words
+ * inside the answer's (a guess with extra words wrapped around the correct
+ * one). `ratio` is how much of the *target's* content that run covers, for
+ * scaling partial credit — always < 1 in practice, since full coverage on
+ * the raw (non-filler-stripped) strings would already have matched exactly.
+ */
+function bestContiguousMatch(answerWords: string[], targetWords: string[]): ContiguousMatch {
+	if (
+		answerWords.length <= targetWords.length &&
+		contiguousRun(answerWords, targetWords)
+	) {
+		return { matched: true, ratio: answerWords.length / targetWords.length };
+	}
+	if (
+		targetWords.length < answerWords.length &&
+		contiguousRun(targetWords, answerWords)
+	) {
+		return { matched: true, ratio: 1 };
+	}
+	return { matched: false, ratio: 0 };
+}
+
+/**
+ * Splits decoration-stripped text on its first subtitle separator: a colon
+ * ("Call of Duty: Black Ops – Zombies"), a spaced dash ("Minecraft - Volume
+ * Alpha"), or a dash hugging the subtitle with no space after it, closed or
+ * not ("TALES OF ARISE -Beyond the Dawn-", "KINGDOM HEARTS -HD 2.5 ReMIX-" —
+ * a titling convention several real soundtrack albums in the catalog use).
+ * Only the first separator counts, so "Black Ops – Zombies" isn't split any
+ * further. Runs on the decoration-stripped text, so a colon that was pure
+ * OST decoration ("Halo: Original Soundtrack") is long gone by the time this
+ * looks for one — `stripNoise` already consumed it. Returns `null` if none
+ * of the three patterns match.
  */
 function splitOnSubtitleSeparator(strippedText: string): [string, string] | null {
 	const match =
 		strippedText.match(/^(.*?)\s*:\s*(.+)$/) ??
-		strippedText.match(/^(.*?)\s[-–—]\s(.+)$/);
+		strippedText.match(/^(.*?)\s[-–—]\s(.+)$/) ??
+		strippedText.match(/^(.*?)\s[-–—](\S.*?)[-–—]?\s*$/);
 	if (!match) return null;
 	return [finishNormalize(match[1]), finishNormalize(match[2])];
 }
 
-/** Exact, typo-tolerant, or whole-word-prefix match against one candidate. */
-function matchesCandidate(normalizedAnswer: string, candidate: string): boolean {
-	if (!candidate) return false;
-	if (normalizedAnswer === candidate) return true;
-	if (similarity(normalizedAnswer, candidate) >= SIMILARITY_THRESHOLD) return true;
-	return isPrefixMatch(normalizedAnswer, candidate);
+/** How closely an answer matched a title-like target, and how much of it. */
+export type TitleMatchResult = {
+	tier: "exact" | "partial" | "none";
+	/** Fraction of the matched candidate covered — only meaningful for "partial". */
+	ratio: number;
+};
+
+const NO_MATCH: TitleMatchResult = { tier: "none", ratio: 0 };
+
+/**
+ * Every string a player could reasonably be graded against for one target:
+ * the decoration-stripped whole, its subtitle-separator segments, and any
+ * rescued bracket content ("Super Mario Kart" from "(Super Mario Kart
+ * Remix)") both on its own and appended after the primary title (so "Rainbow
+ * Road Super Mario Kart" also lines up as one candidate).
+ */
+function buildCandidates(target: string): string[] {
+	const preNormalized = preNormalize(target);
+	const strippedTarget = stripNoise(preNormalized);
+	const primary = finishNormalize(strippedTarget);
+
+	const candidates = new Set<string>();
+	if (primary) candidates.add(primary);
+
+	const segments = splitOnSubtitleSeparator(strippedTarget);
+	if (segments) {
+		for (const segment of segments) if (segment) candidates.add(segment);
+	}
+
+	const rescued = extractBracketCandidates(preNormalized)
+		.map((content) => finishNormalize(content))
+		.filter(Boolean);
+	for (const segment of rescued) {
+		candidates.add(segment);
+		if (primary) candidates.add(finishNormalize(`${primary} ${segment}`));
+	}
+
+	return [...candidates];
 }
 
 /**
- * Accepts whichever half of a subtitle-separated album name a player
- * actually recognizes: the franchise it leads with ("Halo" for "Halo:
- * Combat Evolved"), or the specific title it names after the separator
- * ("Skyrim" for "The Elder Scrolls V: Skyrim"). A bare exact/similarity
- * check against each half needs no length gate — the separator is Spotify's
- * own explicit boundary, not an inference we're making from word position,
- * so a single-word half is exactly as trustworthy as a multi-word one. When
- * there's no separator at all, falls back to `isPrefixMatch` against the
- * whole title, for franchise names Spotify just appends a subtitle onto
- * with no punctuation ("Crash Bandicoot" for "Crash Bandicoot N. Sane
- * Trilogy").
+ * Exact-or-typo-tolerant match against one candidate string, falling back to
+ * a contiguous-run partial match — first on the words as typed, then again
+ * with filler words (the/and/of/…) dropped from both sides, so skipping a
+ * connector ("Ori Will of the Wisp" for "Ori and the Will of the Wisps")
+ * doesn't zero out an otherwise-correct run. The filler-tolerant pass can
+ * never itself produce "exact" — dropping real words is still worth less
+ * than naming them.
  */
-export function isTitleMatch(answer: string, target: string): boolean {
+function evaluateCandidate(normalizedAnswer: string, candidate: string): TitleMatchResult {
+	if (!candidate) return NO_MATCH;
+	if (normalizedAnswer === candidate) return { tier: "exact", ratio: 1 };
+	if (similarity(normalizedAnswer, candidate) >= SIMILARITY_THRESHOLD) {
+		return { tier: "exact", ratio: 1 };
+	}
+
+	const answerWords = normalizedAnswer.split(" ");
+	const candidateWords = candidate.split(" ");
+
+	const raw = bestContiguousMatch(answerWords, candidateWords);
+
+	const filteredAnswer = answerWords.filter((word) => !STOPWORDS.has(word));
+	const filteredCandidate = candidateWords.filter((word) => !STOPWORDS.has(word));
+	const filtered =
+		filteredAnswer.length && filteredCandidate.length
+			? bestContiguousMatch(filteredAnswer, filteredCandidate)
+			: { matched: false, ratio: 0 };
+
+	const best = filtered.ratio > raw.ratio ? filtered : raw;
+	if (!best.matched) return NO_MATCH;
+	return { tier: "partial", ratio: best.ratio };
+}
+
+/**
+ * Grades an answer against one or more real-world names for the same
+ * target — Titre/Musique pass both the track's album and its own name,
+ * since Spotify sometimes tells two different stories about what a track
+ * "is" (a soundtrack album titled after the game vs. a track named after
+ * the specific piece being covered, e.g. "Tom Clancy's Siege" the album next
+ * to "Rainbow Six Siege Main Theme" the track). Returns the single best
+ * result found across every target and every candidate derived from it.
+ */
+export function matchTitleTier(answer: string, ...targets: string[]): TitleMatchResult {
 	const normalizedAnswer = normalizeText(answer);
-	if (!normalizedAnswer) return false;
+	if (!normalizedAnswer) return NO_MATCH;
 
-	const strippedTarget = stripNoise(preNormalize(target));
-	const normalizedTarget = finishNormalize(strippedTarget);
-	if (!normalizedTarget) return false;
-
-	if (matchesCandidate(normalizedAnswer, normalizedTarget)) return true;
-
-	const segments = splitOnSubtitleSeparator(strippedTarget);
-	if (!segments) return false;
-
-	return segments.some((segment) => matchesCandidate(normalizedAnswer, segment));
+	let best: TitleMatchResult = NO_MATCH;
+	for (const target of targets) {
+		if (!target) continue;
+		for (const candidate of buildCandidates(target)) {
+			const result = evaluateCandidate(normalizedAnswer, candidate);
+			if (result.tier === "exact") return result;
+			if (result.tier === "partial" && result.ratio > best.ratio) best = result;
+		}
+	}
+	return best;
 }

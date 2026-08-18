@@ -89,6 +89,8 @@ export type playerProps = {
 	host: boolean;
 	score: number;
 	answer: string;
+	/** Client epoch ms when `answer` was submitted, for the speed bonus. */
+	answeredAt?: number;
 	/** Points won in the round that just finished. Optional: lobbies created
 	 * before scoring existed have players without it. */
 	roundPoints?: number;

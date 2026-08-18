@@ -49,6 +49,7 @@ function withClearedAnswers(players: playerProps[]): playerProps[] {
 	return players.map((player) => ({
 		...player,
 		answer: "",
+		answeredAt: undefined,
 		roundPoints: 0,
 		roundCorrect: false,
 	}));
@@ -158,6 +159,7 @@ export async function finishRound(
 		row.players,
 		track,
 		row.game_state.questionMode ?? row.game_state.mode,
+		row.game_state,
 	);
 
 	const players = row.players.map((player) => {
@@ -189,7 +191,9 @@ export async function updatePlayerAnswer(
 
 	return updateLobbyRow(code, {
 		players: row.players.map((player) =>
-			player.id === playerId ? { ...player, answer } : player,
+			player.id === playerId
+				? { ...player, answer, answeredAt: Date.now() }
+				: player,
 		),
 	});
 }

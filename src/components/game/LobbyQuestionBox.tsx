@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { PrimaryButton } from "../Button";
 import { IconChat, IconSend } from "../icons/GameIcons";
 import { GameStatus } from "../../types";
 import type { gameStateProps, musicItemsProps, playerProps } from "../../types";
+import { showToast } from "../../lib/toast";
 import LobbyAnswerBox from "./LobbyAnswerBox";
 
 interface LobbyQuestionBoxProps {
@@ -37,24 +38,42 @@ export default function LobbyQuestionBox({
 	inputId = "lobby-question-answer",
 }: LobbyQuestionBoxProps) {
 	const [answer, setAnswer] = useState("");
-	const [submitted, setSubmitted] = useState(false);
+	const [pending, setPending] = useState(false);
 
-	useEffect(() => {
+	// Clears the locally-typed draft when a new round begins — during render,
+	// not in an effect. The lock itself (`hasAnswered`, below) is driven by
+	// server data rather than this comparison, since `round` can repeat (e.g.
+	// replaying a one-round game always starts back at round 0) and a
+	// dependency that never changes would leave the box permanently locked.
+	const [lastRound, setLastRound] = useState(gameState?.round);
+	if (gameState?.round !== lastRound) {
+		setLastRound(gameState?.round);
 		setAnswer("");
-		setSubmitted(false);
-	}, [gameState?.round]);
+	}
 
 	if (!gameState) return null;
 
+	// Locking off the player's own row (not local-only state) means both
+	// mounted copies of this component (desktop + compact, see CLAUDE.md)
+	// agree on whether this round is already answered, and the lock always
+	// clears the moment the round-start write clears `answer` server-side —
+	// it can't get stuck the way a round-number comparison can.
+	const hasAnswered = Boolean(
+		players.find((player) => player.id === currentPlayer)?.answer,
+	);
+	const locked = hasAnswered || pending;
+
 	async function handleSubmit(e: FormEvent<HTMLFormElement>) {
 		e.preventDefault();
-		if (!answer.trim() || submitted) return;
+		if (!answer.trim() || locked) return;
 
-		setSubmitted(true);
+		setPending(true);
 		try {
 			await answerAction(answer, currentPlayer);
 		} catch {
-			setSubmitted(false);
+			showToast("Impossible d'envoyer ta réponse, réessaie.", "error");
+		} finally {
+			setPending(false);
 		}
 	}
 
@@ -75,6 +94,7 @@ export default function LobbyQuestionBox({
 				>
 					<IconChat />
 					<h2
+						id={`${inputId}-label`}
 						className={`font-display font-bold ${compact ? "text-base" : "text-lg"}`}
 					>
 						{question}
@@ -91,7 +111,9 @@ export default function LobbyQuestionBox({
 						type='text'
 						value={answer}
 						onChange={handleChange}
-						disabled={submitted}
+						disabled={locked}
+						aria-labelledby={`${inputId}-label`}
+						aria-describedby={locked ? `${inputId}-status` : undefined}
 						maxLength={80}
 						placeholder='Écris ta réponse ici...'
 						className={`field-input px-4 disabled:cursor-not-allowed disabled:border-lavender/14 disabled:opacity-60 ${
@@ -102,19 +124,20 @@ export default function LobbyQuestionBox({
 					<PrimaryButton
 						type='submit'
 						className={`w-full ${compact ? "py-2.5!" : ""}`}
-						disabled={submitted || !answer.trim()}
+						disabled={locked || !answer.trim()}
 					>
 						<IconSend />
-						{submitted ? "Envoyé !" : "Envoyer"}
+						{locked ? "Envoyé !" : "Envoyer"}
 					</PrimaryButton>
 
-					{submitted && (
-						<p
-							className={`text-center text-lavender/60 ${compact ? "text-xs" : "text-sm"}`}
-						>
-							Ta réponse est verrouillée jusqu'à la prochaine manche.
-						</p>
-					)}
+					<p
+						id={`${inputId}-status`}
+						role='status'
+						aria-live='polite'
+						className={`text-center text-lavender/60 ${compact ? "text-xs" : "text-sm"} ${locked ? "" : "sr-only"}`}
+					>
+						Ta réponse est verrouillée jusqu'à la prochaine manche.
+					</p>
 				</form>
 			</div>
 		);

@@ -89,7 +89,7 @@ export default function Game() {
 	}
 
 	const answeredCount = lobby?.player.filter((p) => !!p.answer).length ?? 0;
-	useAnswerChime({ answeredCount, enabled: isHostPlayer });
+	useAnswerChime({ answeredCount });
 
 	const { counter } = useRoundLifecycle({
 		code,
