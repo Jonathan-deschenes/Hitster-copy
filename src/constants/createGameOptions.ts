@@ -1,12 +1,12 @@
 import { GameMode, type GameModeEnum, type gameCategoryProps } from "../types";
 
 export const musicStyle: gameCategoryProps[] = [
-	{ value: "2EtWHTBuXqWGpG6JmFkM5O", label: "Summer party" },
+	{ value: "5uTIjINVLkamPugISdx3Rg", label: "Summer party" },
 	{ value: "3tRlJUnhjHmNMTQM5dIV1b", label: "Francophone" },
 	{ value: "4PaAYhJOgMIdWKkAKx3KBU", label: "Rock" },
 	{ value: "4hS4xpg6lzOrKqA3kAbGdW", label: "Jeux vidéo" },
 	{ value: "4OU4FTKX6U5rlPy7qNiaDg", label: "Films et émission" },
-	{ value: "09cv5duYGfbvb9kh8Z0iGj", label: "Test" }, // comment in production
+	//{ value: "09cv5duYGfbvb9kh8Z0iGj", label: "Test" }, // comment in production
 ];
 
 /**
