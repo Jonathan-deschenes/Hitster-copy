@@ -59,6 +59,7 @@ export default function PasswordField({
 					placeholder='Lorem ipsum'
 					autoComplete='new-password'
 					className='field-input py-3 pr-10 pl-3.5 text-[0.9rem] sm:py-3.5 sm:pr-11 sm:pl-4 sm:text-[0.95rem]'
+					data-1p-ignore
 					{...props}
 				/>
 				<button
