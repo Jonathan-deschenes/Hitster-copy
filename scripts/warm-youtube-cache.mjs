@@ -33,6 +33,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createClient } from "@supabase/supabase-js";
+import { musicStyle } from "../src/constants/createGameOptions.ts";
 
 config({ path: ".env.local" });
 
@@ -40,28 +41,32 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PROGRESS_FILE = join(SCRIPT_DIR, ".youtube-cache-progress.json");
 
 // Keep in sync with `musicStyle` in src/constants/createGameOptions.ts.
-const DEFAULT_PLAYLIST_IDS = [
-	"2EtWHTBuXqWGpG6JmFkM5O", // Summer party
-	"3tRlJUnhjHmNMTQM5dIV1b", // Francophone
-	"4PaAYhJOgMIdWKkAKx3KBU", // Rock
-	"4hS4xpg6lzOrKqA3kAbGdW", // Jeux vidéo
-	"4OU4FTKX6U5rlPy7qNiaDg", // Films et émission
-	"09cv5duYGfbvb9kh8Z0iGj", // Test
-];
+const DEFAULT_PLAYLIST_IDS = [];
+musicStyle.map((music) => DEFAULT_PLAYLIST_IDS.push(music.value));
 
 // ---------------------------------------------------------------------------
 // Args
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
-	const args = { dryRun: false, apiSearch: false, maxTracks: Infinity, chunkSize: 10, playlists: DEFAULT_PLAYLIST_IDS };
+	const args = {
+		dryRun: false,
+		apiSearch: false,
+		maxTracks: Infinity,
+		chunkSize: 10,
+		playlists: DEFAULT_PLAYLIST_IDS,
+	};
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i];
 		if (arg === "--dry-run") args.dryRun = true;
 		else if (arg === "--api-search") args.apiSearch = true;
 		else if (arg === "--max-tracks") args.maxTracks = Number(argv[++i]);
 		else if (arg === "--chunk-size") args.chunkSize = Number(argv[++i]);
-		else if (arg === "--playlists") args.playlists = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
+		else if (arg === "--playlists")
+			args.playlists = argv[++i]
+				.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean);
 		else {
 			console.error(`Unknown argument: ${arg}`);
 			process.exit(1);
@@ -91,7 +96,10 @@ function loadDone() {
 }
 
 function saveDone(doneSet) {
-	writeFileSync(PROGRESS_FILE, JSON.stringify({ done: [...doneSet] }, null, "\t"));
+	writeFileSync(
+		PROGRESS_FILE,
+		JSON.stringify({ done: [...doneSet] }, null, "\t"),
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +132,12 @@ const QUOTA_PATTERN = /quota|rate ?limit|RESOURCE_EXHAUSTED|429|403/i;
 const INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
 const INNERTUBE_SEARCH_URL = `https://www.youtube.com/youtubei/v1/search?key=${INNERTUBE_KEY}&prettyPrint=false`;
 const INNERTUBE_CONTEXT = {
-	client: { clientName: "WEB", clientVersion: "2.20240101.00.00", hl: "en", gl: "US" },
+	client: {
+		clientName: "WEB",
+		clientVersion: "2.20240101.00.00",
+		hl: "en",
+		gl: "US",
+	},
 };
 // Base64 protobuf for the "type = Video" search filter (drops channels/playlists).
 const VIDEO_FILTER_PARAMS = "EgIQAQ==";
@@ -138,7 +151,8 @@ function collectVideoIds(node, out = []) {
 	if (Array.isArray(node)) {
 		for (const child of node) collectVideoIds(child, out);
 	} else if (node && typeof node === "object") {
-		if (typeof node.videoRenderer?.videoId === "string") out.push(node.videoRenderer.videoId);
+		if (typeof node.videoRenderer?.videoId === "string")
+			out.push(node.videoRenderer.videoId);
 		for (const key of Object.keys(node)) collectVideoIds(node[key], out);
 	}
 	return out;
@@ -152,7 +166,11 @@ async function resolveYoutubeIds(track) {
 			const res = await fetch(INNERTUBE_SEARCH_URL, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ context: INNERTUBE_CONTEXT, query, params: VIDEO_FILTER_PARAMS }),
+				body: JSON.stringify({
+					context: INNERTUBE_CONTEXT,
+					query,
+					params: VIDEO_FILTER_PARAMS,
+				}),
 			});
 			if (!res.ok) throw new Error(`innertube ${res.status}`);
 			const data = await res.json();
@@ -169,7 +187,9 @@ async function resolveYoutubeIds(track) {
 }
 
 const chunk = (arr, size) =>
-	Array.from({ length: Math.ceil(arr.length / size) }, (_, i) => arr.slice(i * size, i * size + size));
+	Array.from({ length: Math.ceil(arr.length / size) }, (_, i) =>
+		arr.slice(i * size, i * size + size),
+	);
 
 const sum = (arr) => arr.reduce((a, b) => a + b, 0);
 
@@ -183,7 +203,9 @@ async function main() {
 	const url = process.env.VITE_SUPABASE_URL;
 	const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
 	if (!url || !anonKey) {
-		console.error("Missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY in .env.local");
+		console.error(
+			"Missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY in .env.local",
+		);
 		process.exit(1);
 	}
 	const supabase = createClient(url, anonKey);
@@ -194,9 +216,12 @@ async function main() {
 	const tracksById = new Map();
 	for (const playlistId of args.playlists) {
 		process.stdout.write(`Fetching playlist ${playlistId} … `);
-		const { data, error } = await supabase.functions.invoke("spotify-playlist", {
-			body: { playlistId }, // no maxTracks ⇒ the whole playlist
-		});
+		const { data, error } = await supabase.functions.invoke(
+			"spotify-playlist",
+			{
+				body: { playlistId }, // no maxTracks ⇒ the whole playlist
+			},
+		);
 		if (error || !data) {
 			console.log("FAILED");
 			console.error(`  ${(await readFunctionError(error)) ?? "unknown error"}`);
@@ -204,10 +229,16 @@ async function main() {
 		}
 		for (const track of data.musics ?? []) {
 			if (!tracksById.has(track.id)) {
-				tracksById.set(track.id, { id: track.id, name: track.name, artist: track.artist });
+				tracksById.set(track.id, {
+					id: track.id,
+					name: track.name,
+					artist: track.artist,
+				});
 			}
 		}
-		console.log(`${data.musics?.length ?? 0} tracks (unique so far: ${tracksById.size})`);
+		console.log(
+			`${data.musics?.length ?? 0} tracks (unique so far: ${tracksById.size})`,
+		);
 	}
 
 	// 2. Dedup vs what's already been searched.
@@ -222,10 +253,14 @@ async function main() {
 		: `≈ ${Math.ceil((pending.length * RAW_CANDIDATES) / 50)} units total (verify only — no per-track search)`;
 
 	console.log("\n── Summary ─────────────────────────────");
-	console.log(`Mode:                   ${args.apiSearch ? "API search (metered)" : "no-quota resolver"}`);
+	console.log(
+		`Mode:                   ${args.apiSearch ? "API search (metered)" : "no-quota resolver"}`,
+	);
 	console.log(`Playlists scanned:      ${args.playlists.length}`);
 	console.log(`Unique tracks:          ${uniqueTracks.length}`);
-	console.log(`Already processed:      ${uniqueTracks.length - pending.length}`);
+	console.log(
+		`Already processed:      ${uniqueTracks.length - pending.length}`,
+	);
 	console.log(`Pending:                ${pending.length}`);
 	console.log(`Est. YouTube quota:     ${quotaLine}`);
 	console.log("────────────────────────────────────────\n");
@@ -235,7 +270,9 @@ async function main() {
 		return;
 	}
 	if (pending.length === 0) {
-		console.log("Nothing pending. Cache is fully warmed for these playlists. ✅");
+		console.log(
+			"Nothing pending. Cache is fully warmed for these playlists. ✅",
+		);
 		return;
 	}
 
@@ -248,14 +285,21 @@ async function main() {
 
 	for (let i = 0; i < chunks.length; i++) {
 		const batch = chunks[i];
-		process.stdout.write(`Chunk ${i + 1}/${chunks.length} (${batch.length} tracks) … `);
+		process.stdout.write(
+			`Chunk ${i + 1}/${chunks.length} (${batch.length} tracks) … `,
+		);
 
 		// No-quota mode: resolve candidate ids locally, then hand them to
 		// youtube-match so it verifies + caches without spending a search.
 		let payload = batch;
 		if (!args.apiSearch) {
-			const resolved = await Promise.all(batch.map((track) => resolveYoutubeIds(track)));
-			payload = batch.map((track, idx) => ({ ...track, youtubeIds: resolved[idx] }));
+			const resolved = await Promise.all(
+				batch.map((track) => resolveYoutubeIds(track)),
+			);
+			payload = batch.map((track, idx) => ({
+				...track,
+				youtubeIds: resolved[idx],
+			}));
 		}
 
 		const { data, error } = await supabase.functions.invoke("youtube-match", {
@@ -268,13 +312,19 @@ async function main() {
 			console.error(`  ${detail ?? "unknown error"}`);
 			saveDone(done);
 			if (detail && QUOTA_PATTERN.test(detail)) {
-				console.log(`\nDaily quota reached. Progress saved — re-run tomorrow to resume.`);
-				console.log(`Cached this run: ${matchedTracks} tracks across ${processed} searched.`);
+				console.log(
+					`\nDaily quota reached. Progress saved — re-run tomorrow to resume.`,
+				);
+				console.log(
+					`Cached this run: ${matchedTracks} tracks across ${processed} searched.`,
+				);
 			}
 			process.exit(1);
 		}
 
-		const matchCounts = Object.values(data.matches ?? {}).map((ids) => ids.length);
+		const matchCounts = Object.values(data.matches ?? {}).map(
+			(ids) => ids.length,
+		);
 		const matchedInBatch = matchCounts.filter((n) => n > 0).length;
 		matchedTracks += matchedInBatch;
 		processed += batch.length;
@@ -284,13 +334,19 @@ async function main() {
 		for (const track of batch) done.add(track.id);
 		saveDone(done);
 
-		console.log(`${matchedInBatch}/${batch.length} matched (verified ids: ${sum(matchCounts)})`);
+		console.log(
+			`${matchedInBatch}/${batch.length} matched (verified ids: ${sum(matchCounts)})`,
+		);
 	}
 
-	console.log(`\nDone. Searched ${processed} new tracks, ${matchedTracks} matched and cached.`);
+	console.log(
+		`\nDone. Searched ${processed} new tracks, ${matchedTracks} matched and cached.`,
+	);
 	const stillPending = pending.length - thisRun.length;
 	if (stillPending > 0) {
-		console.log(`${stillPending} still pending — run again (optionally with --max-tracks) to continue.`);
+		console.log(
+			`${stillPending} still pending — run again (optionally with --max-tracks) to continue.`,
+		);
 	} else {
 		console.log("All playlists fully warmed. ✅");
 	}
