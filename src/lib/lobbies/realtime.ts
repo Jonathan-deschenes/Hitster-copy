@@ -2,6 +2,7 @@ import { supabase } from "../supabaseClient";
 import type { lobbyProps, lobbyRowProps } from "../../types";
 import { rowToLobby } from "./mappers";
 import { findPublicLobbies } from "./queries";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 
 export function subscribeToPublicLobbies(
 	onChange: (lobbies: lobbyRowProps[]) => void,
@@ -80,7 +81,12 @@ export function subscribeToLobbyByCode(
 // reconnect the websocket, rejoin the presence channel, `track()` again —
 // which routinely runs past a couple of seconds (worse in dev, where the
 // bundle isn't pre-built), so this is deliberately generous.
-const PRESENCE_LEAVE_GRACE_MS = 15000;
+const PRESENCE_LEAVE_GRACE_MS = 5000;
+
+function isKeyPresent(channel: RealtimeChannel, key: string): boolean {
+	const metas = channel.presenceState()[key];
+	return Array.isArray(metas) && metas.length > 0;
+}
 
 /**
  * Tracks the current player's presence on a per-lobby channel and reports
@@ -111,7 +117,7 @@ export function subscribeToLobbyPresence(
 			// key, so if the key is still present here, some connection for it
 			// is already back and this `leave` is stale: ignore it outright
 			// instead of arming a timer nothing will ever cancel.
-			if (key in channel.presenceState()) return;
+			if (isKeyPresent(channel, key)) return;
 
 			const existing = pendingLeaves.get(key);
 			if (existing) clearTimeout(existing);
@@ -123,7 +129,7 @@ export function subscribeToLobbyPresence(
 					// Re-check again at fire time in case the reconnect landed
 					// after this timer was armed but wasn't caught by the `join`
 					// listener below for some reason.
-					if (key in channel.presenceState()) return;
+					if (isKeyPresent(channel, key)) return;
 					onPlayerLeave(key);
 				}, PRESENCE_LEAVE_GRACE_MS),
 			);
