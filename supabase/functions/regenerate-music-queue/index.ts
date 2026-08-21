@@ -98,12 +98,25 @@ Deno.serve(async (req: Request) => {
 		);
 		if (metadataError) throw metadataError;
 
-		const musicQueue = {
-			items: selected.map((track) => ({
-				trackId: track.id,
-				youtubeIds: youtubeByTrack.get(track.id) ?? [],
+		const { error: queueDeleteError } = await supabaseAdmin
+			.from("lobby_music_queue")
+			.delete()
+			.eq("lobby_id", lobbyId);
+		if (queueDeleteError) throw queueDeleteError;
+		const { error: queueError } = await supabaseAdmin.from("lobby_music_queue").insert(
+			selected.map((track, position) => ({
+				lobby_id: lobbyId,
+				position,
+				track_id: track.id,
+				youtube_ids: youtubeByTrack.get(track.id) ?? [],
 			})),
+		);
+		if (queueError) throw queueError;
+
+		const musicQueue = {
+			items: [],
 			current: 0,
+			length: selected.length,
 		};
 		const { error: lobbyError } = await supabaseAdmin
 			.from("lobbies")

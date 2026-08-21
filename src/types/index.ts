@@ -144,4 +144,6 @@ export type playbackTrackProps = {
 export type playlistQueueProps = {
 	items: playbackTrackProps[];
 	current: number;
+	/** Total private queue size; the public `items` array contains at most one track. */
+	length: number;
 };

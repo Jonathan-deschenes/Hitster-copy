@@ -20,10 +20,6 @@ type LobbyForScoring = {
 	id: string;
 	game_state: gameStateProps;
 	players: playerProps[];
-	music_queue: {
-		items: { trackId: string; youtubeIds: string[] }[];
-		current: number;
-	};
 };
 
 Deno.serve(async (req: Request) => {
@@ -40,7 +36,7 @@ Deno.serve(async (req: Request) => {
 
 		const { data, error: lobbyError } = await supabaseAdmin
 			.from("lobbies")
-			.select("id, game_state, players, music_queue")
+			.select("id, game_state, players")
 			.eq("code", lobbyCode)
 			.single();
 		if (lobbyError || !data) throw lobbyError ?? new Error("Lobby not found");
@@ -52,14 +48,21 @@ Deno.serve(async (req: Request) => {
 			});
 		}
 
-		const playbackTrack = lobby.music_queue.items[lobby.music_queue.current];
-		if (!playbackTrack) throw new Error("Current track not found");
+		const { data: queuedTrack, error: queueError } = await supabaseAdmin
+			.from("lobby_music_queue")
+			.select("track_id")
+			.eq("lobby_id", lobby.id)
+			.eq("position", lobby.game_state.round)
+			.single();
+		if (queueError || !queuedTrack) {
+			throw queueError ?? new Error("Private queue track not found");
+		}
 
 		const { data: metadataRow, error: metadataError } = await supabaseAdmin
 			.from("track_metadata")
 			.select("metadata")
 			.eq("lobby_id", lobby.id)
-			.eq("track_id", playbackTrack.trackId)
+			.eq("track_id", queuedTrack.track_id)
 			.single();
 		if (metadataError || !metadataRow) {
 			throw metadataError ?? new Error("Track metadata not found");

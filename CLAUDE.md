@@ -86,7 +86,7 @@ lobbies
   game_state    jsonb        -- gameStateProps: status, mode, questionMode, round, duration,
                              --   roundStartedAt/pausedElapsedMs (round clock)…
   players       jsonb        -- playerProps[]: id, pseudo, host, score, answer, roundPoints…
-  music_queue   jsonb        -- playback-only { items: [{trackId,youtubeIds}], current }
+  music_queue   jsonb        -- current-only { items: [] or [currentTrack], current: 0, length }
 ```
 
 1. **`rowToLobby` (`mappers.ts`) is the only DB→app boundary, and it renames:** `is_public`→`public`,
@@ -98,8 +98,9 @@ lobbies
 4. **`replica identity full` is set** so DELETE realtime events carry every column — otherwise a
    `code=eq.xxxx` filter on DELETE never matches and clients never learn the lobby closed.
 
-Three service-role-only tables have RLS on with **no policies**: `spotify_catalog_token`,
-`youtube_match_cache`, and `track_metadata` (the per-lobby answer key).
+Four service-role-only tables have RLS on with **no policies**: `spotify_catalog_token`,
+`youtube_match_cache`, `track_metadata` (the per-lobby answer key), and `lobby_music_queue` (the
+ordered future tracks and YouTube candidates).
 
 ---
 
@@ -123,10 +124,9 @@ op**, `startRound`.
 - **`ended` is a row status, not local state** — every client must reach the podium together. Resolves to
   the **`pause`** intent. `Game.tsx` renders `PodiumStage`; `GameFooter` withholds the host action +
   "relancer la partie" so the podium owns the sole CTA, gated on **`isHostPlayer`**.
-- **`startRound` is one atomic write** — answers, question, `round`, `status`, round clock and
-  `music_queue.current` in a single `update`. **`current` is derived from `round`, never incremented**
-  (per-client increments raced and permanently skewed the queue); and clients **never see a half-started
-  round** (splitting it let `playing` arrive before the track).
+- **`start-round` is one server write** — it reads exactly one private queue position and publishes
+  answers, question, `round`, `status`, round clock and that round's playback ids together. Future
+  positions never enter `lobbies`; clients never see a half-started round.
 - **The countdown is derived, not decremented.** `roundStartedAt` is the epoch ms of position 0; clients
   compute `remainingSeconds` (`src/lib/playback/`) against it. `pauseRound` freezes elapsed into
   `pausedElapsedMs`; `resumeRound` rewinds `roundStartedAt` by it. A skewed client clock skews its own
@@ -135,10 +135,9 @@ op**, `startRound`.
   grades with the shared pure scorer, and commits scores + `revealedTrack` through a guarded RPC. In
   `useRoundLifecycle`, the request is gated on `isHostPlayer`. Two triggers funnel through `finalizeRound`:
   countdown hits 0, or every player answered.
-- **Double-payout is guarded twice:** `roundFinalizedRef` and a `status === Finished` check in
-  `finishRound`. The ref is a **boolean, not a round number** — a restart resets `round` to 0, and a
-  remembered number would block the new game's round 1. `finalizeRound` keeps empty `useCallback` deps and
-  reads the track from `roundTrackRef` (it's a dep of both round-ending effects).
+- **Double-payout is guarded twice:** `roundFinalizedRef` and the guarded finalization RPC. The ref is
+  a **boolean, not a round number** — a restart resets `round` to 0, and a remembered number would block
+  the new game's round 1.
 - **`finish-round` writes scores, status and the reveal atomically**, so clients never receive metadata
   before `finished` and the reveal never shows stale points.
 - **The track plays through the reveal:** `finished` resolves to `idle` (players hear the song), not
@@ -184,10 +183,11 @@ Pure and dependency-free — if tests are ever added, start here.
 **Every client runs its own `YT.Player`** (playback used to be a single Spotify SDK tab) — no relay,
 no Spotify auth in the frontend.
 
-- **Spotify is metadata-only.** `regenerate-music-queue` fetches catalog metadata server-to-server and
-  stores it in locked `track_metadata`. The public queue receives only `trackId` plus ranked
-  `youtubeIds`. Tracks with no cached candidate are dropped; a short queue is handled (`isFinalRound`
-  is bounded by queue length).
+- **Spotify is metadata-only.** `regenerate-music-queue` fetches catalog metadata server-to-server,
+  stores it in locked `track_metadata`, and stores ordered playback ids in locked
+  `lobby_music_queue`. The public queue is empty while waiting and contains only the current round once
+  `start-round` begins it. Tracks with no cached candidate are dropped; `music_queue.length` exposes
+  only the non-secret count needed by `isFinalRound`.
 - **Lobby creation is cache-only → zero YouTube quota.** `regenerate-music-queue` reads candidates
   directly from locked `youtube_match_cache` — no search, verify, or YouTube API key. Uncached tracks
   are dropped; if *nothing* is cached, it fails instead of writing an unplayable lobby. Fill the cache

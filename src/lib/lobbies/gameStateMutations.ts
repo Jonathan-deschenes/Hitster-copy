@@ -64,42 +64,12 @@ function withClearedAnswers(players: playerProps[]): playerProps[] {
  * it) is what stops concurrent clients from skipping tracks. See CLAUDE.md.
  */
 export async function startRound(code: string): Promise<lobbyProps | null> {
-	const row = await findLobbyRowByCode(code);
-	if (!row) return null;
-
-	const gameState = row.game_state;
-
-	// Same shape as `finishRound`'s guard below: a double-fired handler can't
-	// advance the round twice.
-	if (gameState.status === GameStatus.Playing) return rowToLobby(row);
-
-	// Only a finished round draws the next question; starting the very first
-	// one keeps whatever `createLobby`/`updateGameSettings` already picked.
-	const advancing = gameState.status === GameStatus.Finished;
-	const round = advancing ? gameState.round + 1 : gameState.round;
-	const { question, questionMode } = advancing
-		? resolveGameQuestion(gameState.mode)
-		: { question: gameState.question, questionMode: gameState.questionMode };
-
-	// `current === round` is the invariant, so recomputing it means the pointer
-	// cannot drift no matter how often this runs.
-	const items = row.music_queue?.items ?? [];
-	const current = Math.min(round, Math.max(items.length - 1, 0));
-
-	return updateLobbyRow(code, {
-		players: withClearedAnswers(row.players),
-		game_state: {
-			...gameState,
-			question,
-			questionMode,
-			round,
-			status: GameStatus.Playing,
-			roundStartedAt: Date.now(),
-			pausedElapsedMs: undefined,
-			revealedTrack: undefined,
-		},
-		music_queue: { ...row.music_queue, items, current },
+	const { error } = await supabase.functions.invoke("start-round", {
+		body: { lobbyCode: code },
 	});
+	if (error) throw new Error("Impossible de démarrer la manche.");
+	const row = await findLobbyRowByCode(code);
+	return row ? rowToLobby(row) : null;
 }
 
 /**

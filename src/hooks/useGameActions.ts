@@ -160,7 +160,7 @@ export function useGameActions({
 	// `totalRounds` items and `startRound` would just replay the final track.
 	const finalRound = isFinalRound(
 		lobby?.game_state,
-		lobby?.music_queue?.items.length,
+		lobby?.music_queue?.length,
 	);
 
 	const hostActionByStatus: Record<GameStateEnum, () => void> = {

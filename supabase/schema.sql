@@ -62,7 +62,7 @@ alter table public.spotify_catalog_token enable row level security;
 -- so every client sees the same queue via realtime, instead of each client
 -- fetching/shuffling its own copy from Spotify.
 alter table public.lobbies
-  add column if not exists music_queue jsonb not null default '{"items":[],"current":0}'::jsonb;
+  add column if not exists music_queue jsonb not null default '{"items":[],"current":0,"length":0}'::jsonb;
 
 -- Caches the resolved, embed-verified YouTube video ids for a Spotify track so
 -- youtube-match can skip the 100-unit search.list call on every track it has
@@ -90,6 +90,32 @@ create table if not exists public.track_metadata (
 );
 
 alter table public.track_metadata enable row level security;
+
+-- The ordered future playback queue. It is deliberately separate from the
+-- realtime/public lobby row: even a YouTube id is enough to identify a future
+-- answer. `start-round` reads one position and publishes only that round's
+-- candidate ids into lobbies.music_queue.
+create table if not exists public.lobby_music_queue (
+  lobby_id uuid not null references public.lobbies(id) on delete cascade,
+  position integer not null check (position >= 0),
+  track_id text not null,
+  youtube_ids text[] not null,
+  primary key (lobby_id, position)
+);
+
+alter table public.lobby_music_queue enable row level security;
+
+-- One-time/idempotent cleanup for lobbies created with the old public full
+-- queue shape. Such lobbies must regenerate before they can start again, but
+-- their future answer ids stop leaking immediately after this schema runs.
+update public.lobbies
+set music_queue = '{"items":[],"current":0,"length":0}'::jsonb
+where not (music_queue ? 'length')
+   or jsonb_array_length(coalesce(music_queue->'items', '[]'::jsonb)) > 1
+   or coalesce(
+     (music_queue->'items'->0) ?| array['name', 'artist', 'album', 'releaseDate', 'cover'],
+     false
+   );
 
 -- Atomically changes only one player's answer, avoiding concurrent answer
 -- submissions overwriting the whole players array. Callable only through the
