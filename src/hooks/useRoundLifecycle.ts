@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GameStatus } from "../types";
-import type { GameStateEnum, gameStateProps, musicItemsProps } from "../types";
-import { finishRound, updateGameStatus } from "../lib/lobbies";
+import type { GameStateEnum, gameStateProps } from "../types";
+import { finishRound } from "../lib/lobbies";
 import { remainingSeconds } from "../lib/playback";
 
 interface UseRoundLifecycleParams {
@@ -9,7 +9,6 @@ interface UseRoundLifecycleParams {
 	gameState?: gameStateProps;
 	/** The host flag alone — scoring duty, owed even without a Spotify device. */
 	isHostPlayer: boolean;
-	currentTrack?: musicItemsProps;
 	/** Numbers, not the players array: its identity changes on every realtime update. */
 	answeredCount: number;
 	playerCount: number;
@@ -27,20 +26,11 @@ export function useRoundLifecycle({
 	code,
 	gameState,
 	isHostPlayer,
-	currentTrack,
 	answeredCount,
 	playerCount,
 }: UseRoundLifecycleParams) {
 	const gameStatus = gameState?.status;
 	const isPlaying = gameStatus === GameStatus.Playing;
-
-	// Held in a ref so `finalizeRound` can keep empty deps: it is a dependency
-	// of both round-ending effects, and a new identity per queue update would
-	// re-run them.
-	const roundTrackRef = useRef<musicItemsProps | undefined>(undefined);
-	useEffect(() => {
-		roundTrackRef.current = currentTrack;
-	}, [currentTrack]);
 
 	// Whether this client already paid out the current round. Deliberately a
 	// boolean, not a round number: "relancer la partie" resets `round` to 0, and
@@ -51,11 +41,11 @@ export function useRoundLifecycle({
 		if (roundFinalizedRef.current) return;
 		roundFinalizedRef.current = true;
 
-		finishRound(lobbyCode, roundTrackRef.current).catch((error) => {
+		finishRound(lobbyCode).catch((error) => {
 			console.error(error);
-			// Let a retry through, and end the round even if scoring failed.
+			// Keep the round active: forcing `finished` client-side would bypass
+			// server grading and produce a reveal with no metadata.
 			roundFinalizedRef.current = false;
-			updateGameStatus(lobbyCode, GameStatus.Finished);
 		});
 	}, []);
 

@@ -79,6 +79,104 @@ create table if not exists public.youtube_match_cache (
 -- Function (service role key) can read/write it -- same as spotify_catalog_token.
 alter table public.youtube_match_cache enable row level security;
 
+-- The answer key. One metadata row per lobby/Spotify track; clients can never
+-- select it because RLS has no policies. Queue rows broadcast only track and
+-- YouTube ids, while finish-round copies the current row into revealedTrack.
+create table if not exists public.track_metadata (
+  lobby_id uuid not null references public.lobbies(id) on delete cascade,
+  track_id text not null,
+  metadata jsonb not null,
+  primary key (lobby_id, track_id)
+);
+
+alter table public.track_metadata enable row level security;
+
+-- Atomically changes only one player's answer, avoiding concurrent answer
+-- submissions overwriting the whole players array. Callable only through the
+-- service-role Edge Function.
+create or replace function public.submit_lobby_answer(
+  lobby_code text,
+  submitted_player_id text,
+  submitted_answer text,
+  submitted_at bigint
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.lobbies
+  set players = (
+    select coalesce(jsonb_agg(
+      case
+        when player->>'id' = submitted_player_id
+          and coalesce(player->>'answer', '') = ''
+        then jsonb_set(
+          jsonb_set(player, '{answer}', to_jsonb(submitted_answer)),
+          '{answeredAt}', to_jsonb(submitted_at)
+        )
+        else player
+      end
+      order by position
+    ), '[]'::jsonb)
+    from jsonb_array_elements(players) with ordinality as item(player, position)
+  )
+  where code = lobby_code
+    and game_state->>'status' in ('playing', 'paused')
+    and exists (
+      select 1 from jsonb_array_elements(players) as player
+      where player->>'id' = submitted_player_id
+    );
+
+  if not found then
+    raise exception 'Lobby, player, or active round not found';
+  end if;
+end;
+$$;
+
+revoke all on function public.submit_lobby_answer(text, text, text, bigint)
+  from public, anon, authenticated;
+grant execute on function public.submit_lobby_answer(text, text, text, bigint)
+  to service_role;
+
+-- Commits grading and reveal only if the same round is still active. This is
+-- the server-side counterpart of the client ref guard and prevents duplicate
+-- payout from two finish triggers.
+create or replace function public.finalize_lobby_round(
+  lobby_code text,
+  expected_round integer,
+  scored_players jsonb,
+  revealed_track jsonb
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  changed integer;
+begin
+  update public.lobbies
+  set players = scored_players,
+      game_state = jsonb_set(
+        jsonb_set(game_state, '{status}', '"finished"'::jsonb),
+        '{revealedTrack}', revealed_track
+      )
+  where code = lobby_code
+    and (game_state->>'round')::integer = expected_round
+    and game_state->>'status' in ('playing', 'paused');
+
+  get diagnostics changed = row_count;
+  return changed = 1;
+end;
+$$;
+
+revoke all on function public.finalize_lobby_round(text, integer, jsonb, jsonb)
+  from public, anon, authenticated;
+grant execute on function public.finalize_lobby_round(text, integer, jsonb, jsonb)
+  to service_role;
+
 -- ---------------------------------------------------------------------------
 -- Scheduled cleanup of abandoned lobbies
 -- ---------------------------------------------------------------------------

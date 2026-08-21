@@ -1,19 +1,7 @@
 import { supabase } from "../supabaseClient";
-import type {
-	gameCategoryProps,
-	lobbyProps,
-	lobbyRowProps,
-	musicItemsProps,
-	playlistQueueProps,
-} from "../../types";
+import type { lobbyProps, lobbyRowProps } from "../../types";
 import { rowToLobby } from "./mappers";
 import { findLobbyRowByCode } from "./queries";
-import { fetchPlaylistTracks } from "../spotify/playlist";
-import { matchYoutubeVideos } from "../youtube/search";
-import shuffle from "lodash/shuffle";
-
-/** Headroom over `rounds` so a few unmatched YouTube searches don't shrink the queue. */
-const QUEUE_BUFFER_RATIO = 1.3;
 
 /** Postgres `unique_violation` — the `code` column collided. */
 export const UNIQUE_VIOLATION = "23505";
@@ -82,39 +70,17 @@ export async function updateLobbyRowById(
  */
 export async function regenerateMusicQueue(
 	rowId: string,
-	category: gameCategoryProps,
-	rounds: number,
 ): Promise<lobbyProps> {
-	const tracks = await fetchPlaylistTracks(
-		category.value,
-		Math.ceil(rounds * QUEUE_BUFFER_RATIO),
-	);
-	// Cache-only: a lobby is built purely from tracks already warmed into the
-	// YouTube cache, so creating a game never spends search quota. Tracks not yet
-	// cached come back empty and are dropped below — warm the cache ahead of time
-	// with scripts/warm-youtube-cache.mjs.
-	const matches = await matchYoutubeVideos(
-		tracks.map((track) => ({ id: track.id, name: track.name, artist: track.artist })),
-		{ cacheOnly: true },
-	);
+	const { error } = await supabase.functions.invoke("regenerate-music-queue", {
+		body: { lobbyId: rowId },
+	});
+	if (error) throw new Error("Impossible de préparer la file musicale.");
 
-	const matched: musicItemsProps[] = tracks
-		.map((track) => ({ ...track, youtubeIds: matches[track.id] ?? [] }))
-		.filter((track): track is musicItemsProps => track.youtubeIds.length > 0)
-		.slice(0, rounds);
-
-	// An empty queue is an unplayable game — surface it clearly instead of
-	// writing a lobby nobody can start. Most likely the playlist isn't cached yet.
-	if (matched.length === 0) {
-		throw new Error(
-			"Aucune musique en cache pour cette playlist. Réessaie une fois la mise en cache terminée.",
-		);
-	}
-
-	const music_queue: playlistQueueProps = {
-		items: shuffle(matched),
-		current: 0,
-	};
-
-	return updateLobbyRowById(rowId, { music_queue });
+	const { data, error: readError } = await supabase
+		.from("lobbies")
+		.select()
+		.eq("id", rowId)
+		.single();
+	if (readError) throw readError;
+	return rowToLobby(data as lobbyRowProps);
 }

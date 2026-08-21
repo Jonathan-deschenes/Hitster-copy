@@ -181,8 +181,7 @@ export function useGameActions({
 	async function handleSkipTrack() {
 		if (!code || !lobby) return;
 
-		const { items = [], current = 0 } = lobby.music_queue ?? {};
-		await finishRound(code, items[current]);
+		await finishRound(code);
 	}
 
 	/** "Relancer la partie": same settings, scores and round counter back to 0. */

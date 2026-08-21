@@ -95,7 +95,6 @@ export default function Game() {
 		code,
 		gameState,
 		isHostPlayer,
-		currentTrack,
 		answeredCount,
 		playerCount: lobby?.player.length ?? 0,
 	});
@@ -147,6 +146,7 @@ export default function Game() {
 						currentPlayerId={current}
 						gameState={gameState}
 						currentTrack={currentTrack}
+						revealedTrack={gameState?.revealedTrack}
 						counter={counter}
 						showCounter={
 							status === GameStatus.Playing || status === GameStatus.Paused

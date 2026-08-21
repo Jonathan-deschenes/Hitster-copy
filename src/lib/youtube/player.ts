@@ -6,6 +6,7 @@ declare global {
 }
 
 const IFRAME_API_SRC = "https://www.youtube.com/iframe_api";
+const PLAYER_IFRAME_TITLE = "Good luck!";
 
 let iframeApiPromise: Promise<void> | null = null;
 
@@ -67,7 +68,38 @@ export function createYoutubePlayer(events: YT.Events): YT.Player {
 	container.style.pointerEvents = "none";
 	document.body.appendChild(container);
 
-	return new window.YT.Player(container, {
+	const playerHolder: { current?: YT.Player } = {};
+	let observedIframe: HTMLIFrameElement | null = null;
+	const titleObserver = new MutationObserver(() => protectIframeTitle());
+
+	/**
+	 * YouTube writes the video's real name into the host-page iframe's `title`
+	 * attribute after every load. Keep a useful generic accessibility label
+	 * instead, so the answer is not printed directly in Elements.
+	 */
+	function protectIframeTitle() {
+		const iframe = playerHolder.current?.getIframe();
+		if (!iframe) return;
+
+		if (observedIframe !== iframe) {
+			titleObserver.disconnect();
+			observedIframe = iframe;
+			titleObserver.observe(iframe, {
+				attributes: true,
+				attributeFilter: ["title"],
+			});
+		}
+
+		if (iframe.title !== PLAYER_IFRAME_TITLE) {
+			iframe.title = PLAYER_IFRAME_TITLE;
+		}
+	}
+
+	// The API replaces `container` with its iframe. Watch that one replacement,
+	// then `protectIframeTitle` narrows the observer to the iframe's title only.
+	titleObserver.observe(document.body, { childList: true, subtree: true });
+
+	const player = new window.YT.Player(container, {
 		height: "180",
 		width: "320",
 		playerVars: {
@@ -79,6 +111,23 @@ export function createYoutubePlayer(events: YT.Events): YT.Player {
 			playsinline: 1,
 			origin: window.location.origin,
 		},
-		events,
+		events: {
+			...events,
+			onReady: (event) => {
+				protectIframeTitle();
+				events.onReady?.(event);
+			},
+		},
 	});
+	playerHolder.current = player;
+
+	const destroy = player.destroy.bind(player);
+	player.destroy = () => {
+		titleObserver.disconnect();
+		observedIframe = null;
+		playerHolder.current = undefined;
+		destroy();
+	};
+
+	return player;
 }

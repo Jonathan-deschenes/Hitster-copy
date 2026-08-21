@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import type { gameStateProps, musicItemsProps } from "../types";
+import type { gameStateProps, playbackTrackProps } from "../types";
 import { resolvePlaybackIntent } from "../lib/playback";
 import type { PlaybackIntent } from "../lib/playback";
 import { showToast } from "../lib/toast";
@@ -7,7 +7,7 @@ import type { youtubePlayerHandleProps } from "./useYoutubePlayer";
 
 interface UseYoutubePlaybackParams {
 	gameState?: gameStateProps;
-	currentTrack?: musicItemsProps;
+	currentTrack?: playbackTrackProps;
 	/** The whole memoized handle: a narrowed literal would re-run the reconciler every render. */
 	youtubePlayer: youtubePlayerHandleProps;
 }

@@ -61,7 +61,7 @@ export async function createLobby(
 
 		if (!error && data) {
 			const row = data as lobbyRowProps;
-			return regenerateMusicQueue(row.id, settings.category, settings.rounds);
+			return regenerateMusicQueue(row.id);
 		}
 
 		if (error && error.code !== UNIQUE_VIOLATION) {

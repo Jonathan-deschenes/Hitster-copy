@@ -8,13 +8,14 @@ import GameStatusBadge from "./GameStatusBadge";
 import PlayerAvatarList from "./PlayerAvatarList";
 import { DEFAULT_QUESTION } from "../../constants/createGameOptions";
 import { GameStatus } from "../../types";
-import type { gameStateProps, lobbyProps, musicItemsProps } from "../../types";
+import type { gameStateProps, lobbyProps, musicItemsProps, playbackTrackProps } from "../../types";
 
 interface GameStageProps {
 	lobby: lobbyProps;
 	currentPlayerId: string;
 	gameState?: gameStateProps;
-	currentTrack?: musicItemsProps;
+	currentTrack?: playbackTrackProps;
+	revealedTrack?: musicItemsProps;
 	counter: number;
 	/** Playing or paused — the round clock overlays the album art. */
 	showCounter: boolean;
@@ -31,6 +32,7 @@ export default function GameStage({
 	currentPlayerId,
 	gameState,
 	currentTrack,
+	revealedTrack,
 	counter,
 	showCounter,
 	canManagePlayers,
@@ -75,7 +77,7 @@ export default function GameStage({
 						currentPlayer={currentPlayerId}
 						gameState={gameState}
 						players={lobby.player}
-						currentTrack={currentTrack}
+						currentTrack={revealedTrack}
 					/>
 				</div>
 
@@ -96,7 +98,7 @@ export default function GameStage({
 							currentPlayer={currentPlayerId}
 							gameState={gameState}
 							players={lobby.player}
-							currentTrack={currentTrack}
+							currentTrack={revealedTrack}
 						/>
 					)}
 
@@ -105,8 +107,8 @@ export default function GameStage({
 					<div className='relative flex w-full h-fit justify-center'>
 						{/* Keyed so a new track remounts the reveal animation. */}
 						<AlbumArtPanel
-							key={currentTrack?.id}
-							currentTrack={currentTrack}
+							key={currentTrack?.trackId}
+							currentTrack={revealedTrack}
 							gameState={gameState}
 						/>
 						{showCounter && (

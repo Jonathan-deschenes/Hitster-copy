@@ -1,4 +1,4 @@
-import { GameMode, type GameModeEnum } from "../../types";
+import { GameMode, type GameModeEnum } from "../../types/index.ts";
 
 /**
  * What a correct answer is worth, per mode. Weighted by how hard the mode is

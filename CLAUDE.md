@@ -6,7 +6,7 @@ round pays out points.
 **Stack:** React 19 + TypeScript + Vite + Tailwind v4 (SPA) · Supabase (Postgres + Realtime + Edge
 Functions), the only backend · Spotify for metadata, YouTube IFrame API for playback.
 
-**No test framework. No auth system.** Verification is manual.
+**No auth system.** Vitest covers the pure scoring helpers; game-flow verification is manual.
 
 > **The UI is French** — every user-facing string. Code, comments and type names are English.
 
@@ -28,7 +28,7 @@ Functions), the only backend · Spotify for metadata, YouTube IFrame API for pla
 
 **Environment.** Frontend: `.env.local` with `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. Edge
 Functions have **separate** dashboard secrets: `SPOTIFY_CLIENT_ID`, `SUPABASE_URL`,
-`SUPABASE_SERVICE_ROLE_KEY` (`spotify-playlist`) and `YOUTUBE_API_KEY` (`youtube-match`, a static
+`SUPABASE_SERVICE_ROLE_KEY` (all data functions) and `YOUTUBE_API_KEY` (`youtube-match`, a static
 YouTube Data API v3 key). No frontend Spotify credentials.
 
 ---
@@ -53,7 +53,7 @@ pages/  →  hooks/  →  lib/{lobbies,spotify,youtube,scoring,playback}  →  l
 | `src/lib/youtube/` | `search` (track → video ids), `player` (IFrame API + `YT.Player`). |
 | `src/types/index.ts` | All shared types (`somethingProps` naming). |
 | `src/constants/createGameOptions.ts` | Playlists, game modes, question text, duration bounds. |
-| `supabase/` | `schema.sql` + Edge Functions `spotify-playlist` and `youtube-match`. |
+| `supabase/` | `schema.sql` + catalog/playback cache functions and the server-authoritative queue, answer and round-finalization functions. |
 
 **`Game.tsx` is composition only** — no game logic; it resolves the lobby, derives the host role, and
 wires five hooks to four children:
@@ -74,8 +74,8 @@ Children: `GameStage` (the `<main>`, → `PodiumStage` once `ended`), `GameFoote
 
 ## The single source of truth: one `lobbies` row
 
-**The entire game state lives in one Postgres row.** No server-side logic — every client mirrors the
-row over Realtime and decides what to write.
+**The public game state lives in one Postgres row.** Clients mirror it over Realtime. Secret track
+metadata and grading are server-side; ordinary lobby/presence/settings mutations remain client-driven.
 
 ```
 lobbies
@@ -86,7 +86,7 @@ lobbies
   game_state    jsonb        -- gameStateProps: status, mode, questionMode, round, duration,
                              --   roundStartedAt/pausedElapsedMs (round clock)…
   players       jsonb        -- playerProps[]: id, pseudo, host, score, answer, roundPoints…
-  music_queue   jsonb        -- playlistQueueProps { items, current }; current written only by startRound
+  music_queue   jsonb        -- playback-only { items: [{trackId,youtubeIds}], current }
 ```
 
 1. **`rowToLobby` (`mappers.ts`) is the only DB→app boundary, and it renames:** `is_public`→`public`,
@@ -98,8 +98,8 @@ lobbies
 4. **`replica identity full` is set** so DELETE realtime events carry every column — otherwise a
    `code=eq.xxxx` filter on DELETE never matches and clients never learn the lobby closed.
 
-Two service-role-only tables have RLS on with **no policies**: `spotify_catalog_token`,
-`youtube_match_cache`.
+Three service-role-only tables have RLS on with **no policies**: `spotify_catalog_token`,
+`youtube_match_cache`, and `track_metadata` (the per-lobby answer key).
 
 ---
 
@@ -131,14 +131,16 @@ op**, `startRound`.
   compute `remainingSeconds` (`src/lib/playback/`) against it. `pauseRound` freezes elapsed into
   `pausedElapsedMs`; `resumeRound` rewinds `roundStartedAt` by it. A skewed client clock skews its own
   countdown — values clamp to `[0, duration]`.
-- **Only the host ends the round** (scoring rewrites the whole `players` array; concurrent writers clobber
-  scores). In `useRoundLifecycle`, gated on `isHostPlayer`. Two triggers funnel through `finalizeRound`:
+- **Only the host asks to end the round.** The `finish-round` Edge Function reads locked metadata,
+  grades with the shared pure scorer, and commits scores + `revealedTrack` through a guarded RPC. In
+  `useRoundLifecycle`, the request is gated on `isHostPlayer`. Two triggers funnel through `finalizeRound`:
   countdown hits 0, or every player answered.
 - **Double-payout is guarded twice:** `roundFinalizedRef` and a `status === Finished` check in
   `finishRound`. The ref is a **boolean, not a round number** — a restart resets `round` to 0, and a
   remembered number would block the new game's round 1. `finalizeRound` keeps empty `useCallback` deps and
   reads the track from `roundTrackRef` (it's a dep of both round-ending effects).
-- **`finishRound` writes scores and status in one update**, so the reveal never shows stale points.
+- **`finish-round` writes scores, status and the reveal atomically**, so clients never receive metadata
+  before `finished` and the reveal never shows stale points.
 - **The track plays through the reveal:** `finished` resolves to `idle` (players hear the song), not
   `play` — `elapsedMs` has passed the duration, so a position would seek past the end. Next `startRound`
   replaces it; "relancer la partie" (→ `waiting`) stops it.
@@ -182,16 +184,14 @@ Pure and dependency-free — if tests are ever added, start here.
 **Every client runs its own `YT.Player`** (playback used to be a single Spotify SDK tab) — no relay,
 no Spotify auth in the frontend.
 
-- **Spotify is metadata-only.** `fetchPlaylistTracks` (`spotify/playlist.ts`) supplies
-  title/artist/release date/album/cover, which scoring grades off. What plays is a YouTube video:
-  `regenerateMusicQueue` attaches a `youtubeIds: string[]` candidate list per track. Tracks with no
-  candidate are dropped, so the fetch asks Spotify for `rounds * 1.3`; a short queue is handled
-  (`isFinalRound` bounded by queue length).
-- **Lobby creation is cache-only → zero YouTube quota.** `regenerateMusicQueue` calls
-  `matchYoutubeVideos(tracks, { cacheOnly: true })`; `youtube-match` serves candidates purely from
-  `youtube_match_cache` — no search, no verify, no API key. Uncached tracks are dropped; if *nothing* is
-  cached, it throws a French error rather than write an unplayable lobby. Fill the cache first with
-  `npm run warm-cache`.
+- **Spotify is metadata-only.** `regenerate-music-queue` fetches catalog metadata server-to-server and
+  stores it in locked `track_metadata`. The public queue receives only `trackId` plus ranked
+  `youtubeIds`. Tracks with no cached candidate are dropped; a short queue is handled (`isFinalRound`
+  is bounded by queue length).
+- **Lobby creation is cache-only → zero YouTube quota.** `regenerate-music-queue` reads candidates
+  directly from locked `youtube_match_cache` — no search, verify, or YouTube API key. Uncached tracks
+  are dropped; if *nothing* is cached, it fails instead of writing an unplayable lobby. Fill the cache
+  first with `npm run warm-cache`.
 - **Warming (`scripts/warm-youtube-cache.mjs`, `npm run warm-cache`).** Default mode resolves candidate
   ids via YouTube's public innertube search (**zero Data API quota**) and hands them to `youtube-match`
   to verify + cache. Fetches every playlist in full, dedups across playlists, records progress locally so
@@ -209,6 +209,11 @@ no Spotify auth in the frontend.
   cross-page singleton needed), called unconditionally in `Game.tsx`. `useYoutubePlayback` applies
   `resolvePlaybackIntent` against it, deduping via `appliedRef` (keyed on the first candidate as a stable
   identity). Each client reconciles independently — no host-handoff bookkeeping.
+- **The iframe title is scrubbed.** YouTube rewrites the host-page iframe's `title` to the real video
+  name after a load; `createYoutubePlayer` observes that attribute and restores the generic
+  `"Lecteur audio"` label. This prevents the direct Elements-panel answer leak while preserving an
+  accessible iframe name. It is only obfuscation: a browser receiving YouTube playback can still
+  discover the video id or metadata through its own network/runtime tooling.
 - **Candidates are a runtime fallback chain.** On `onError` (a verified candidate can still fail live)
   `useYoutubePlayer` advances to the next via `attemptRef`, toasting only once all are exhausted — the
   reconciler never sees this (`resume()` resolves once it *starts* an attempt). `resume` also plays in

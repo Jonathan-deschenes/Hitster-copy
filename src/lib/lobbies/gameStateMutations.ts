@@ -5,7 +5,6 @@ import type {
 	GameStateEnum,
 	lobbyProps,
 	lobbySettingsFormProps,
-	musicItemsProps,
 	playerProps,
 } from "../../types";
 import { rowToLobby } from "./mappers";
@@ -16,8 +15,8 @@ import {
 	updateLobbyRow,
 } from "./rowOperations";
 import { resolveGameQuestion } from "../../util";
-import { scoreRound } from "../scoring";
 import { elapsedMs } from "../playback";
+import { supabase } from "../supabaseClient";
 
 // Merges the patch into the existing game_state rather than overwriting the
 // column, so a status change doesn't clobber a concurrent round update. Still
@@ -97,6 +96,7 @@ export async function startRound(code: string): Promise<lobbyProps | null> {
 			status: GameStatus.Playing,
 			roundStartedAt: Date.now(),
 			pausedElapsedMs: undefined,
+			revealedTrack: undefined,
 		},
 		music_queue: { ...row.music_queue, items, current },
 	});
@@ -144,41 +144,13 @@ export async function resumeRound(code: string): Promise<lobbyProps | null> {
  */
 export async function finishRound(
 	code: string,
-	track: musicItemsProps | undefined,
 ): Promise<lobbyProps | null> {
+	const { error } = await supabase.functions.invoke("finish-round", {
+		body: { lobbyCode: code },
+	});
+	if (error) throw new Error("Impossible de terminer la manche.");
 	const row = await findLobbyRowByCode(code);
-	if (!row) return null;
-
-	// The caller's effect can fire more than once for one round; without this
-	// the same answers would be paid out twice.
-	if (row.game_state.status === GameStatus.Finished) {
-		return rowToLobby(row);
-	}
-
-	const results = scoreRound(
-		row.players,
-		track,
-		row.game_state.questionMode ?? row.game_state.mode,
-		row.game_state,
-	);
-
-	const players = row.players.map((player) => {
-		const { points, correct } = results[player.id] ?? {
-			points: 0,
-			correct: false,
-		};
-		return {
-			...player,
-			score: (player.score ?? 0) + points,
-			roundPoints: points,
-			roundCorrect: correct,
-		};
-	});
-
-	return updateLobbyRow(code, {
-		players,
-		game_state: { ...row.game_state, status: GameStatus.Finished },
-	});
+	return row ? rowToLobby(row) : null;
 }
 
 export async function updatePlayerAnswer(
@@ -186,16 +158,12 @@ export async function updatePlayerAnswer(
 	answer: string,
 	playerId: string,
 ): Promise<lobbyProps | null> {
-	const row = await findLobbyRowByCode(code);
-	if (!row) return null;
-
-	return updateLobbyRow(code, {
-		players: row.players.map((player) =>
-			player.id === playerId
-				? { ...player, answer, answeredAt: Date.now() }
-				: player,
-		),
+	const { error } = await supabase.functions.invoke("submit-answer", {
+		body: { lobbyCode: code, playerId, answer },
 	});
+	if (error) throw new Error("Impossible d'envoyer la réponse.");
+	const row = await findLobbyRowByCode(code);
+	return row ? rowToLobby(row) : null;
 }
 
 export async function updateGameSettings(
@@ -223,6 +191,7 @@ export async function updateGameSettings(
 			// a leftover timestamp would make the lobby look mid-round.
 			roundStartedAt: undefined,
 			pausedElapsedMs: undefined,
+			revealedTrack: undefined,
 		},
 		// This doubles as the "relancer la partie" path, so the standings go
 		// back to zero along with the round counter.
@@ -233,9 +202,5 @@ export async function updateGameSettings(
 	});
 
 	// A new playlist or round count needs a matching queue.
-	return regenerateMusicQueue(
-		row.id,
-		updatedSettings.category,
-		updatedSettings.rounds,
-	);
+	return regenerateMusicQueue(row.id);
 }

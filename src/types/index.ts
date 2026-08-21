@@ -81,6 +81,8 @@ export type gameStateProps = {
 	roundStartedAt?: number;
 	/** Elapsed ms frozen while `status === Paused`; absent while playing. */
 	pausedElapsedMs?: number;
+	/** Metadata copied from the locked server table only after the round ends. */
+	revealedTrack?: musicItemsProps;
 };
 
 export type playerProps = {
@@ -130,16 +132,16 @@ export type musicItemsProps = {
 	duration: number;
 	cover: spotifyImageProps;
 	releaseDate: string;
-	/**
-	 * Candidate YouTube video ids for playback, ranked by search relevance.
-	 * More than one on purpose: `videoEmbeddable=true` from the search is a
-	 * hint, not a guarantee, so the player falls back through these instead of
-	 * going silent on a single bad pick. Empty when no match was found at all.
-	 */
+};
+
+/** The only track shape broadcast while a round is in progress. */
+export type playbackTrackProps = {
+	trackId: string;
+	/** Ranked YouTube candidates used by the runtime playback fallback. */
 	youtubeIds: string[];
 };
 
 export type playlistQueueProps = {
-	items: musicItemsProps[];
+	items: playbackTrackProps[];
 	current: number;
 };

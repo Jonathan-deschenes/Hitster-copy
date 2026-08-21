@@ -1,23 +1,23 @@
-import { GameMode } from "../../types";
+import { GameMode } from "../../types/index.ts";
 import type {
 	GameModeEnum,
 	gameStateProps,
 	musicItemsProps,
 	playerProps,
-} from "../../types";
-import { isTextMatch, matchTitleTier, PARTIAL_MAX_RATIO } from "./normalize";
+} from "../../types/index.ts";
+import { isTextMatch, matchTitleTier, PARTIAL_MAX_RATIO } from "./normalize.ts";
 import {
 	decadeOf,
 	parseAnswerDecade,
 	parseAnswerYear,
 	parseReleaseYear,
-} from "./parse";
+} from "./parse.ts";
 import {
 	CLOSEST_POINTS,
 	MODE_POINTS,
 	RANK_BONUS,
 	SPEED_BONUS_RATIO,
-} from "./points";
+} from "./points.ts";
 
 export type roundResultProps = {
 	/** Points won this round. Added on top of the running score by the caller. */
