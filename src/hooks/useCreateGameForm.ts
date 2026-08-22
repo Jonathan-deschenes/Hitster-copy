@@ -3,6 +3,10 @@ import { useNavigate } from "react-router-dom";
 import bcrypt from "bcryptjs-react";
 import type { createGameFormSettingsProps } from "../types";
 import { createLobby } from "../lib/lobbies";
+import {
+	createLobbySessionToken,
+	storeLobbySessionToken,
+} from "../lib/lobbies/session";
 import { gameModeOptions, musicStyle } from "../constants/createGameOptions";
 import { usePlayerIdentity } from "./usePlayerIdentity";
 
@@ -36,6 +40,7 @@ export function useCreateGameForm() {
 		setIsSubmitting(true);
 
 		try {
+			const sessionToken = createLobbySessionToken();
 			// hash the password
 			const salt = await bcrypt.genSalt(10);
 			const hashedPassword = bcrypt.hashSync(gameFormSettings.password, salt);
@@ -51,7 +56,9 @@ export function useCreateGameForm() {
 					duration: gameFormSettings.duration,
 				},
 				player,
+				sessionToken,
 			);
+			storeLobbySessionToken(lobby.generatedCode, player.id, sessionToken);
 
 			navigate(`/game/${lobby.generatedCode}?current=${player.id}`, {
 				state: lobby,

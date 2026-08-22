@@ -18,24 +18,41 @@ create table if not exists public.lobbies (
 -- fine for a prototype but is NOT production-grade access control.
 alter table public.lobbies enable row level security;
 
+drop policy if exists "Anyone can read lobbies" on public.lobbies;
 create policy "Anyone can read lobbies"
   on public.lobbies for select
   using (true);
 
+drop policy if exists "Anyone can create a lobby" on public.lobbies;
 create policy "Anyone can create a lobby"
   on public.lobbies for insert
   with check (true);
 
+drop policy if exists "Anyone can update a lobby (e.g. join, add player)" on public.lobbies;
 create policy "Anyone can update a lobby (e.g. join, add player)"
   on public.lobbies for update
   using (true);
 
+drop policy if exists "Anyone can delete a lobby" on public.lobbies;
 create policy "Anyone can delete a lobby"
   on public.lobbies for delete
   using (true);
 
 -- Enable realtime so clients can subscribe to live changes (players joining).
-alter publication supabase_realtime add table public.lobbies;
+-- The catalog check keeps this schema safe to re-run on an existing project.
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'lobbies'
+  ) then
+    alter publication supabase_realtime add table public.lobbies;
+  end if;
+end;
+$$;
 
 -- By default Postgres only includes the primary key in the "old record" sent
 -- with UPDATE/DELETE realtime events, so a `filter: code=eq.xxxx` on a DELETE
@@ -117,38 +134,483 @@ where not (music_queue ? 'length')
      false
    );
 
--- Membership changes must be evaluated inside the UPDATE that locks the row.
--- Building a players array in the browser from a previously selected lobby
--- loses players when two joins (or a join and a presence cleanup) race.
-create or replace function public.join_lobby(
-  target_lobby_id uuid,
-  joining_player jsonb
-)
-returns setof public.lobbies
+-- One revocable, unguessable lease per player tab. The token proves which
+-- session may renew/leave; timestamps establish liveness (a JWT cannot do
+-- that because closing a browser does not revoke or expire it).
+create table if not exists public.lobby_player_sessions (
+  lobby_id uuid not null references public.lobbies(id) on delete cascade,
+  player_id text not null,
+  session_token uuid not null unique,
+  last_seen timestamptz not null default clock_timestamp(),
+  disconnecting_at timestamptz,
+  primary key (lobby_id, player_id)
+);
+
+alter table public.lobby_player_sessions enable row level security;
+
+-- Session rows are private. Anonymous clients can only touch their own lease
+-- through the token-validating security-definer functions below.
+revoke all on table public.lobby_player_sessions from anon, authenticated;
+
+-- Remove the earlier snapshot-based RPC overloads during upgrades.
+drop function if exists public.join_lobby(uuid, jsonb);
+drop function if exists public.leave_lobby(text, text);
+
+create or replace function public.pause_lobby_state(current_state jsonb)
+returns jsonb
 language sql
-security invoker
+volatile
 set search_path = public
 as $$
-  update public.lobbies
-  set players = case
-    -- Idempotent for a retried request or a double form submission.
-    when exists (
-      select 1
-      from jsonb_array_elements(players) as existing_player
-      where existing_player->>'id' = joining_player->>'id'
-    ) then players
-    else players || jsonb_build_array(joining_player)
-  end
-  where id = target_lobby_id
-  returning *;
+  select case
+    when current_state->>'status' = 'playing' then
+      jsonb_set(
+        jsonb_set(current_state, '{status}', '"paused"'::jsonb),
+        '{pausedElapsedMs}',
+        to_jsonb(greatest(
+          0::bigint,
+          floor(extract(epoch from clock_timestamp()) * 1000)::bigint
+            - coalesce(
+                (current_state->>'roundStartedAt')::bigint,
+                floor(extract(epoch from clock_timestamp()) * 1000)::bigint
+              )
+        )),
+        true
+      )
+    else current_state
+  end;
 $$;
 
-revoke all on function public.join_lobby(uuid, jsonb) from public;
-grant execute on function public.join_lobby(uuid, jsonb) to anon, authenticated;
+revoke all on function public.pause_lobby_state(jsonb) from public, anon, authenticated;
+
+-- The sole membership-removal primitive. The row lock, session revocation,
+-- host election, clock pause and players update are one transaction.
+create or replace function public.remove_lobby_players(
+  target_lobby_id uuid,
+  removed_player_ids text[]
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  lobby_row public.lobbies%rowtype;
+  remaining_players jsonb;
+  successor_id text;
+begin
+  select * into lobby_row
+  from public.lobbies
+  where id = target_lobby_id
+  for update;
+
+  if not found then return; end if;
+
+  select coalesce(jsonb_agg(player order by position), '[]'::jsonb)
+  into remaining_players
+  from jsonb_array_elements(lobby_row.players)
+       with ordinality as item(player, position)
+  where not (player->>'id' = any(removed_player_ids));
+
+  delete from public.lobby_player_sessions
+  where lobby_id = target_lobby_id
+    and player_id = any(removed_player_ids);
+
+  if jsonb_array_length(remaining_players) = 0 then
+    delete from public.lobbies where id = target_lobby_id;
+    return;
+  end if;
+
+  -- Repair hostless lobbies as well as transferring a departing host.
+  if not exists (
+    select 1 from jsonb_array_elements(remaining_players) as player
+    where coalesce((player->>'host')::boolean, false)
+  ) then
+    select player->>'id' into successor_id
+    from jsonb_array_elements(remaining_players)
+         with ordinality as item(player, position)
+    order by position
+    limit 1;
+
+    select jsonb_agg(
+      jsonb_set(
+        player,
+        '{host}',
+        to_jsonb(player->>'id' = successor_id),
+        true
+      )
+      order by position
+    )
+    into remaining_players
+    from jsonb_array_elements(remaining_players)
+         with ordinality as item(player, position);
+
+    lobby_row.game_state := public.pause_lobby_state(lobby_row.game_state);
+  end if;
+
+  update public.lobbies
+  set players = remaining_players,
+      game_state = lobby_row.game_state
+  where id = target_lobby_id;
+end;
+$$;
+
+revoke all on function public.remove_lobby_players(uuid, text[])
+  from public, anon, authenticated;
+
+create or replace function public.expire_lobby_sessions_for_lobby(
+  target_lobby_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  expired_ids text[];
+begin
+  select array_agg(player_id) into expired_ids
+  from public.lobby_player_sessions
+  where lobby_id = target_lobby_id
+    and (
+      disconnecting_at < clock_timestamp() - interval '15 seconds'
+      or last_seen < clock_timestamp() - interval '5 minutes'
+    );
+
+  if coalesce(array_length(expired_ids, 1), 0) > 0 then
+    perform public.remove_lobby_players(target_lobby_id, expired_ids);
+  end if;
+end;
+$$;
+
+revoke all on function public.expire_lobby_sessions_for_lobby(uuid)
+  from public, anon, authenticated;
+
+create or replace function public.join_lobby(
+  target_lobby_id uuid,
+  joining_player jsonb,
+  joining_session_token uuid
+)
+returns setof public.lobbies
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  lobby_row public.lobbies%rowtype;
+begin
+  if nullif(joining_player->>'id', '') is null then
+    raise exception 'Player id is required';
+  end if;
+
+  select * into lobby_row
+  from public.lobbies
+  where id = target_lobby_id
+  for update;
+
+  if not found then return; end if;
+
+  if lobby_row.game_state->>'status' <> 'waiting' then
+    raise exception 'Lobby has already started';
+  end if;
+
+  insert into public.lobby_player_sessions (
+    lobby_id, player_id, session_token, last_seen, disconnecting_at
+  ) values (
+    target_lobby_id,
+    joining_player->>'id',
+    joining_session_token,
+    clock_timestamp(),
+    null
+  )
+  on conflict (lobby_id, player_id) do update
+  set last_seen = excluded.last_seen,
+      disconnecting_at = null
+  where lobby_player_sessions.session_token = excluded.session_token;
+
+  if not found then
+    raise exception 'This player id already has another active session';
+  end if;
+
+  if not exists (
+    select 1 from jsonb_array_elements(lobby_row.players) as player
+    where player->>'id' = joining_player->>'id'
+  ) then
+    lobby_row.players := lobby_row.players || jsonb_build_array(
+      joining_player || jsonb_build_object('host', false)
+    );
+    update public.lobbies
+    set players = lobby_row.players
+    where id = target_lobby_id;
+  end if;
+
+  return query select * from public.lobbies where id = target_lobby_id;
+end;
+$$;
+
+revoke all on function public.join_lobby(uuid, jsonb, uuid) from public;
+grant execute on function public.join_lobby(uuid, jsonb, uuid) to anon, authenticated;
+
+create or replace function public.heartbeat_lobby_session(
+  lobby_code text,
+  session_player_id text,
+  provided_session_token uuid
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_lobby_id uuid;
+begin
+  select id into target_lobby_id
+  from public.lobbies
+  where code = lobby_code
+  for update;
+
+  if target_lobby_id is null then return false; end if;
+
+  update public.lobby_player_sessions as session
+  set last_seen = clock_timestamp(),
+      disconnecting_at = null
+  where session.lobby_id = target_lobby_id
+    and session.player_id = session_player_id
+    and session.session_token = provided_session_token;
+
+  if not found then return false; end if;
+
+  perform public.expire_lobby_sessions_for_lobby(target_lobby_id);
+  return exists (
+    select 1 from public.lobby_player_sessions
+    where lobby_id = target_lobby_id
+      and player_id = session_player_id
+      and lobby_player_sessions.session_token = provided_session_token
+  );
+end;
+$$;
+
+revoke all on function public.heartbeat_lobby_session(text, text, uuid) from public;
+grant execute on function public.heartbeat_lobby_session(text, text, uuid)
+  to anon, authenticated;
+
+create or replace function public.mark_lobby_session_disconnecting(
+  lobby_code text,
+  session_player_id text,
+  provided_session_token uuid
+)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.lobby_player_sessions as session
+  set disconnecting_at = clock_timestamp()
+  from public.lobbies as lobby
+  where lobby.id = session.lobby_id
+    and lobby.code = lobby_code
+    and session.player_id = session_player_id
+    and session.session_token = provided_session_token;
+$$;
+
+revoke all on function public.mark_lobby_session_disconnecting(text, text, uuid)
+  from public;
+grant execute on function public.mark_lobby_session_disconnecting(text, text, uuid)
+  to anon, authenticated;
 
 create or replace function public.leave_lobby(
   lobby_code text,
-  leaving_player_id text
+  leaving_player_id text,
+  leaving_session_token uuid
+)
+returns setof public.lobbies
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_lobby_id uuid;
+begin
+  select lobby.id into target_lobby_id
+  from public.lobbies as lobby
+  join public.lobby_player_sessions as session on session.lobby_id = lobby.id
+  where lobby.code = lobby_code
+    and session.player_id = leaving_player_id
+    and session.session_token = leaving_session_token;
+
+  if target_lobby_id is null then return; end if;
+  perform public.remove_lobby_players(target_lobby_id, array[leaving_player_id]);
+  return query select * from public.lobbies where id = target_lobby_id;
+end;
+$$;
+
+revoke all on function public.leave_lobby(text, text, uuid) from public;
+grant execute on function public.leave_lobby(text, text, uuid) to anon, authenticated;
+
+create or replace function public.kick_lobby_player(
+  lobby_code text,
+  host_player_id text,
+  host_session_token uuid,
+  target_player_id text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_lobby_id uuid;
+begin
+  select lobby.id into target_lobby_id
+  from public.lobbies as lobby
+  join public.lobby_player_sessions as session on session.lobby_id = lobby.id
+  where lobby.code = lobby_code
+    and session.player_id = host_player_id
+    and session.session_token = host_session_token
+    and exists (
+      select 1 from jsonb_array_elements(lobby.players) as player
+      where player->>'id' = host_player_id
+        and coalesce((player->>'host')::boolean, false)
+    );
+
+  if target_lobby_id is null then raise exception 'Active host session required'; end if;
+  if host_player_id = target_player_id then raise exception 'Host cannot kick itself'; end if;
+  perform public.remove_lobby_players(target_lobby_id, array[target_player_id]);
+end;
+$$;
+
+revoke all on function public.kick_lobby_player(text, text, uuid, text) from public;
+grant execute on function public.kick_lobby_player(text, text, uuid, text)
+  to anon, authenticated;
+
+create or replace function public.promote_lobby_player(
+  lobby_code text,
+  host_player_id text,
+  host_session_token uuid,
+  target_player_id text
+)
+returns setof public.lobbies
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_lobby_id uuid;
+  current_state jsonb;
+begin
+  select lobby.id, lobby.game_state into target_lobby_id, current_state
+  from public.lobbies as lobby
+  join public.lobby_player_sessions as session on session.lobby_id = lobby.id
+  where lobby.code = lobby_code
+    and session.player_id = host_player_id
+    and session.session_token = host_session_token
+    and exists (
+      select 1 from jsonb_array_elements(lobby.players) as player
+      where player->>'id' = host_player_id
+        and coalesce((player->>'host')::boolean, false)
+    )
+    and exists (
+      select 1 from jsonb_array_elements(lobby.players) as player
+      where player->>'id' = target_player_id
+    )
+  for update of lobby;
+
+  if target_lobby_id is null then raise exception 'Active host and target required'; end if;
+
+  update public.lobbies
+  set players = (
+        select jsonb_agg(
+          jsonb_set(player, '{host}', to_jsonb(player->>'id' = target_player_id), true)
+          order by position
+        )
+        from jsonb_array_elements(players) with ordinality as item(player, position)
+      ),
+      game_state = public.pause_lobby_state(current_state)
+  where id = target_lobby_id;
+
+  return query select * from public.lobbies where id = target_lobby_id;
+end;
+$$;
+
+revoke all on function public.promote_lobby_player(text, text, uuid, text) from public;
+grant execute on function public.promote_lobby_player(text, text, uuid, text)
+  to anon, authenticated;
+
+-- Starts a round from the latest locked players array. The Edge Function
+-- resolves the private track/question, but this statement owns the state
+-- transition so a join racing the host's Start click is either included or
+-- rejected after the lobby has started -- never silently overwritten.
+create or replace function public.start_lobby_round(
+  target_lobby_id uuid,
+  expected_status text,
+  expected_round integer,
+  next_round integer,
+  next_question text,
+  next_question_mode text,
+  playback_track jsonb,
+  queue_length integer,
+  started_at bigint
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  changed integer;
+begin
+  update public.lobbies
+  set players = (
+        select coalesce(jsonb_agg(
+          (player - 'answeredAt') || jsonb_build_object(
+            'answer', '',
+            'roundPoints', 0,
+            'roundCorrect', false
+          )
+          order by position
+        ), '[]'::jsonb)
+        from jsonb_array_elements(players) with ordinality as item(player, position)
+      ),
+      game_state =
+        (game_state - 'pausedElapsedMs' - 'revealedTrack') || jsonb_build_object(
+          'question', next_question,
+          'questionMode', next_question_mode,
+          'round', next_round,
+          'status', 'playing',
+          'roundStartedAt', started_at
+        ),
+      music_queue = jsonb_build_object(
+        'items', jsonb_build_array(playback_track),
+        'current', 0,
+        'length', queue_length
+      )
+  where id = target_lobby_id
+    and game_state->>'status' = expected_status
+    and (game_state->>'round')::integer = expected_round;
+
+  get diagnostics changed = row_count;
+  return changed = 1;
+end;
+$$;
+
+revoke all on function public.start_lobby_round(
+  uuid, text, integer, integer, text, text, jsonb, integer, bigint
+) from public, anon, authenticated;
+grant execute on function public.start_lobby_round(
+  uuid, text, integer, integer, text, text, jsonb, integer, bigint
+) to service_role;
+
+-- Settings/restart also derives its score reset from the players value held
+-- by the UPDATE, instead of a browser snapshot selected before a join.
+create or replace function public.update_lobby_settings(
+  lobby_code text,
+  next_public boolean,
+  next_category jsonb,
+  next_mode text,
+  next_question text,
+  next_question_mode text,
+  next_rounds integer,
+  next_duration integer
 )
 returns setof public.lobbies
 language sql
@@ -156,17 +618,41 @@ security invoker
 set search_path = public
 as $$
   update public.lobbies
-  set players = (
-    select coalesce(jsonb_agg(player order by position), '[]'::jsonb)
-    from jsonb_array_elements(players) with ordinality as item(player, position)
-    where player->>'id' <> leaving_player_id
-  )
+  set is_public = next_public,
+      category = next_category,
+      game_state =
+        (game_state - 'roundStartedAt' - 'pausedElapsedMs' - 'revealedTrack')
+        || jsonb_build_object(
+          'round', 0,
+          'mode', next_mode,
+          'status', 'waiting',
+          'question', next_question,
+          'questionMode', next_question_mode,
+          'totalRounds', next_rounds,
+          'duration', next_duration
+        ),
+      players = (
+        select coalesce(jsonb_agg(
+          (player - 'answeredAt') || jsonb_build_object(
+            'answer', '',
+            'roundPoints', 0,
+            'roundCorrect', false,
+            'score', 0
+          )
+          order by position
+        ), '[]'::jsonb)
+        from jsonb_array_elements(players) with ordinality as item(player, position)
+      )
   where code = lobby_code
   returning *;
 $$;
 
-revoke all on function public.leave_lobby(text, text) from public;
-grant execute on function public.leave_lobby(text, text) to anon, authenticated;
+revoke all on function public.update_lobby_settings(
+  text, boolean, jsonb, text, text, text, integer, integer
+) from public;
+grant execute on function public.update_lobby_settings(
+  text, boolean, jsonb, text, text, text, integer, integer
+) to anon, authenticated;
 
 -- Atomically changes only one player's answer, avoiding concurrent answer
 -- submissions overwriting the whole players array. Callable only through the
@@ -235,7 +721,22 @@ declare
   changed integer;
 begin
   update public.lobbies
-  set players = scored_players,
+  set players = (
+        select coalesce(jsonb_agg(
+          coalesce(
+            (
+              select scored
+              from jsonb_array_elements(scored_players) as scored
+              where scored->>'id' = current_player->>'id'
+              limit 1
+            ),
+            current_player
+          )
+          order by position
+        ), '[]'::jsonb)
+        from jsonb_array_elements(players)
+             with ordinality as item(current_player, position)
+      ),
       game_state = jsonb_set(
         jsonb_set(game_state, '{status}', '"finished"'::jsonb),
         '{revealedTrack}', revealed_track
@@ -257,14 +758,10 @@ grant execute on function public.finalize_lobby_round(text, integer, jsonb, json
 -- ---------------------------------------------------------------------------
 -- Scheduled cleanup of abandoned lobbies
 -- ---------------------------------------------------------------------------
--- The app already deletes a lobby when the host leaves with nobody to hand it
--- to (resolveHostDeparture), and Supabase presence catches closed tabs and
--- crashes. What neither can cover is the *last* connected client disappearing
--- ungracefully: presence "leave" events are only observed by the other
--- clients, so with nobody left in the lobby, nothing deletes the row. Such a
--- row keeps a fully populated `players` array -- it is abandoned, not empty --
--- which is why this sweeps on age rather than on emptiness, and why it has to
--- run in the database rather than in a client.
+-- Session leases normally remove closed/crashed players and delete the lobby
+-- when its final session expires. This age-based sweep remains as a last-line
+-- cleanup for legacy rows and any lobby that predates or somehow missed its
+-- session records.
 --
 -- 24h is well past any real game. A client still sitting in a swept lobby
 -- degrades gracefully: replica identity full is set above, so the DELETE
@@ -294,6 +791,28 @@ $$;
 -- keep it off the anon key.
 revoke all on function public.delete_stale_lobbies() from public, anon, authenticated;
 
+-- Backstop when every browser in a lobby disappears and no active heartbeat
+-- remains to perform the per-lobby lease cleanup.
+create or replace function public.expire_lobby_sessions()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target record;
+begin
+  for target in
+    select distinct lobby_id from public.lobby_player_sessions
+  loop
+    perform public.expire_lobby_sessions_for_lobby(target.lobby_id);
+  end loop;
+end;
+$$;
+
+revoke all on function public.expire_lobby_sessions()
+  from public, anon, authenticated;
+
 -- Hourly, not every few minutes: with a 24h TTL a tighter cadence only changes
 -- which minute of the day a row dies, and costs a job run every time.
 -- cron.schedule upserts by name, so re-running this file is safe.
@@ -302,4 +821,10 @@ select cron.schedule(
   'delete-stale-lobbies',
   '17 * * * *',
   $$select public.delete_stale_lobbies()$$
+);
+
+select cron.schedule(
+  'expire-lobby-sessions',
+  '* * * * *',
+  $$select public.expire_lobby_sessions()$$
 );

@@ -5,7 +5,6 @@ import type {
 	GameStateEnum,
 	lobbyProps,
 	lobbySettingsFormProps,
-	playerProps,
 } from "../../types";
 import { rowToLobby } from "./mappers";
 import { findLobbyRowByCode } from "./queries";
@@ -36,22 +35,6 @@ export async function updateGameStatus(
 	status: GameStateEnum,
 ): Promise<lobbyProps> {
 	return updateGameState(code, { status });
-}
-
-// There are deliberately no `updateRound` / `updateGameQuestion` /
-// `resetPlayerAnswer` helpers: those three only ever change together, and
-// issuing them separately is what let clients observe a half-started round.
-// `startRound` does all of it in one write.
-
-/** Wipes last round's answers and verdicts. */
-function withClearedAnswers(players: playerProps[]): playerProps[] {
-	return players.map((player) => ({
-		...player,
-		answer: "",
-		answeredAt: undefined,
-		roundPoints: 0,
-		roundCorrect: false,
-	}));
 }
 
 /**
@@ -112,9 +95,7 @@ export async function resumeRound(code: string): Promise<lobbyProps | null> {
  * Scores and `status` go out in a single update so the reveal never appears
  * with last round's points still on screen. Host-only — see `useRoundLifecycle`.
  */
-export async function finishRound(
-	code: string,
-): Promise<lobbyProps | null> {
+export async function finishRound(code: string): Promise<lobbyProps | null> {
 	const { error } = await supabase.functions.invoke("finish-round", {
 		body: { lobbyCode: code },
 	});
@@ -140,37 +121,25 @@ export async function updateGameSettings(
 	code: string,
 	updatedSettings: lobbySettingsFormProps,
 ) {
-	const row = await findLobbyRowByCode(code);
-	if (!row) return null;
-
 	const { question, questionMode } = resolveGameQuestion(updatedSettings.mode);
 
-	await updateLobbyRow(code, {
-		is_public: updatedSettings.public,
-		category: updatedSettings.category,
-		game_state: {
-			...row.game_state,
-			round: 0,
-			mode: updatedSettings.mode as GameModeEnum,
-			status: GameStatus.Waiting,
-			question,
-			questionMode,
-			totalRounds: updatedSettings.rounds,
-			duration: updatedSettings.duration,
-			// A restart has no round in flight, so the clock has to go too:
-			// a leftover timestamp would make the lobby look mid-round.
-			roundStartedAt: undefined,
-			pausedElapsedMs: undefined,
-			revealedTrack: undefined,
-		},
-		// This doubles as the "relancer la partie" path, so the standings go
-		// back to zero along with the round counter.
-		players: withClearedAnswers(row.players).map((player) => ({
-			...player,
-			score: 0,
-		})),
-	});
+	const { data, error } = await supabase
+		.rpc("update_lobby_settings", {
+			lobby_code: code,
+			next_public: updatedSettings.public,
+			next_category: updatedSettings.category,
+			next_mode: updatedSettings.mode as GameModeEnum,
+			next_question: question,
+			next_question_mode: questionMode,
+			next_rounds: updatedSettings.rounds,
+			next_duration: updatedSettings.duration,
+		})
+		.select()
+		.maybeSingle();
+
+	if (error) throw error;
+	if (!data) return null;
 
 	// A new playlist or round count needs a matching queue.
-	return regenerateMusicQueue(row.id);
+	return regenerateMusicQueue((data as { id: string }).id);
 }

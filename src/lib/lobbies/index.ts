@@ -7,6 +7,8 @@ export {
 	createLobby,
 	joinLobby,
 	leaveLobby,
+	heartbeatLobbySession,
+	kickPlayer,
 	deleteLobby,
 	promotePlayer,
 } from "./lobbyMutations";
@@ -22,5 +24,4 @@ export {
 export {
 	subscribeToPublicLobbies,
 	subscribeToLobbyByCode,
-	subscribeToLobbyPresence,
 } from "./realtime";

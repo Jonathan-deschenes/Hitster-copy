@@ -21,11 +21,13 @@ import PodiumStage from "../components/game/PodiumStage";
 import GameFooter from "../components/game/GameFooter";
 import PlayersModal from "../components/game/PlayersModal";
 import SettingsModal from "../components/game/SettingsModal";
+import { getLobbySessionToken } from "../lib/lobbies/session";
 
 export default function Game() {
 	const { code } = useParams<{ code: string }>();
 	const [searchParams] = useSearchParams();
 	const current = searchParams.get("current");
+	const sessionToken = getLobbySessionToken(code, current);
 
 	// Home hands the lobby over in router state so the first paint isn't a spinner.
 	const location = useLocation();
@@ -55,6 +57,7 @@ export default function Game() {
 		code,
 		lobby,
 		currentPlayerId: current,
+		sessionToken,
 		youtubePlayer,
 	});
 
@@ -117,7 +120,7 @@ export default function Game() {
 	}
 
 	// No auth: "not in the players array" is how a kick reaches this client.
-	if (kicked || !current) return <Navigate to='/' />;
+	if (kicked || !current || !sessionToken) return <Navigate to='/' />;
 
 	const status = gameState?.status;
 

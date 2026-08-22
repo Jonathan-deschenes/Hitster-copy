@@ -9,14 +9,11 @@ import type {
 } from "../../types";
 import { rowToLobby } from "./mappers";
 import { getRandomCode } from "./codeGenerator";
-import { findLobbyRowByCode } from "./queries";
 import {
 	regenerateMusicQueue,
 	UNIQUE_VIOLATION,
-	updateLobbyRow,
 } from "./rowOperations";
 import { resolveGameQuestion } from "../../util";
-import { elapsedMs } from "../playback";
 
 type CreateLobbyInput = {
 	name: string;
@@ -31,6 +28,7 @@ type CreateLobbyInput = {
 export async function createLobby(
 	settings: CreateLobbyInput,
 	host: playerProps,
+	sessionToken: string,
 ): Promise<lobbyProps> {
 	// Retry a handful of times in case the random code collides with an
 	// existing lobby (the `code` column is unique).
@@ -61,6 +59,7 @@ export async function createLobby(
 
 		if (!error && data) {
 			const row = data as lobbyRowProps;
+			await joinLobby(row, host, sessionToken);
 			return regenerateMusicQueue(row.id);
 		}
 
@@ -75,6 +74,7 @@ export async function createLobby(
 export async function joinLobby(
 	row: lobbyRowProps,
 	player: playerProps,
+	sessionToken: string,
 ): Promise<lobbyProps> {
 	// The selected row can be several seconds old. Appending in the browser
 	// would let simultaneous joiners overwrite one another with competing
@@ -83,6 +83,7 @@ export async function joinLobby(
 		.rpc("join_lobby", {
 			target_lobby_id: row.id,
 			joining_player: player,
+			joining_session_token: sessionToken,
 		})
 		.select()
 		.single();
@@ -94,19 +95,50 @@ export async function joinLobby(
 export async function leaveLobby(
 	code: string,
 	playerId: string,
+	sessionToken: string,
 ): Promise<lobbyProps | null> {
-	// Keep removal atomic too: a presence cleanup racing a join must not write
+	// Keep removal atomic too: a session cleanup racing a join must not write
 	// an older players array back over the newly joined player.
 	const { data, error } = await supabase
 		.rpc("leave_lobby", {
 			lobby_code: code,
 			leaving_player_id: playerId,
+			leaving_session_token: sessionToken,
 		})
 		.select()
 		.maybeSingle();
 
 	if (error) throw error;
 	return data ? rowToLobby(data as lobbyRowProps) : null;
+}
+
+export async function heartbeatLobbySession(
+	code: string,
+	playerId: string,
+	sessionToken: string,
+): Promise<boolean> {
+	const { data, error } = await supabase.rpc("heartbeat_lobby_session", {
+		lobby_code: code,
+		session_player_id: playerId,
+		provided_session_token: sessionToken,
+	});
+	if (error) throw error;
+	return data === true;
+}
+
+export async function kickPlayer(
+	code: string,
+	hostPlayerId: string,
+	hostSessionToken: string,
+	targetPlayerId: string,
+): Promise<void> {
+	const { error } = await supabase.rpc("kick_lobby_player", {
+		lobby_code: code,
+		host_player_id: hostPlayerId,
+		host_session_token: hostSessionToken,
+		target_player_id: targetPlayerId,
+	});
+	if (error) throw error;
 }
 
 export async function deleteLobby(code: string): Promise<void> {
@@ -128,26 +160,20 @@ export async function deleteLobby(code: string): Promise<void> {
 
 export async function promotePlayer(
 	code: string,
+	hostPlayerId: string,
+	hostSessionToken: string,
 	playerId: string,
 ): Promise<lobbyProps | null> {
-	const row = await findLobbyRowByCode(code);
-	if (!row) return null;
+	const { data, error } = await supabase
+		.rpc("promote_lobby_player", {
+			lobby_code: code,
+			host_player_id: hostPlayerId,
+			host_session_token: hostSessionToken,
+			target_player_id: playerId,
+		})
+		.select()
+		.maybeSingle();
 
-	// Pause a running game so stale audio doesn't keep playing on the outgoing
-	// host's browser, and freeze the clock so the handoff gap isn't counted as
-	// round time — the new host holds no Spotify context and can only start the
-	// track fresh, at whatever position the row says the round has reached.
-	const game_state =
-		row.game_state.status === GameStatus.Playing
-			? {
-					...row.game_state,
-					status: GameStatus.Paused,
-					pausedElapsedMs: elapsedMs(row.game_state),
-				}
-			: row.game_state;
-
-	return updateLobbyRow(code, {
-		players: row.players.map((p) => ({ ...p, host: p.id === playerId })),
-		game_state,
-	});
+	if (error) throw error;
+	return data ? rowToLobby(data as lobbyRowProps) : null;
 }

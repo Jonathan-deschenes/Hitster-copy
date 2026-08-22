@@ -61,7 +61,7 @@ wires five hooks to four children:
 | Hook | Owns |
 | --- | --- |
 | `useLobbyRealtime` | The row, plus `notFound`/`kicked`. |
-| `useGameActions` | Every user-initiated mutation + presence subscription. |
+| `useGameActions` | Every user-initiated mutation + database session lease heartbeat. |
 | `useYoutubePlayback` | Driving this tab's player from the row — every player, not just host. |
 | `useRoundLifecycle` | Round clock and payout (`finalizeRound`, `roundFinalizedRef`). |
 | `useAnswerChime` | The pop sound when one more player answers. |
@@ -75,7 +75,8 @@ Children: `GameStage` (the `<main>`, → `PodiumStage` once `ended`), `GameFoote
 ## The single source of truth: one `lobbies` row
 
 **The public game state lives in one Postgres row.** Clients mirror it over Realtime. Secret track
-metadata and grading are server-side; ordinary lobby/presence/settings mutations remain client-driven.
+metadata, grading, membership and session expiry are server-authoritative; ordinary settings mutations
+remain client-driven.
 
 ```
 lobbies
@@ -92,8 +93,8 @@ lobbies
 1. **`rowToLobby` (`mappers.ts`) is the only DB→app boundary, and it renames:** `is_public`→`public`,
    `code`→`generatedCode`, `players`→`player` (singular name, still an array). Never pass a raw row to the UI.
 2. Most mutations are read-modify-write operations on jsonb, so concurrent writers can clobber each
-   other. Membership is the exception: `join_lobby` and `leave_lobby` update `players` atomically in
-   Postgres so simultaneous joins and presence cleanup cannot lose a player.
+   other. Membership is the exception: its RPCs lock the lobby row and change the session, players,
+   host and clock in one transaction. Simultaneous joins/removals therefore cannot lose a player.
 3. **RLS is wide open** — anyone with the anon key can read/insert/update/delete any lobby
    (prototype-grade). A blocked delete looks like success, so `deleteLobby` checks the returned `count`.
 4. **`replica identity full` is set** so DELETE realtime events carry every column — otherwise a
@@ -223,9 +224,13 @@ no Spotify auth in the frontend.
   content, so `unlock(...)` **is** the round's first playback (`resume()` marking `isUnlocked`), not
   priming. `Game.tsx` offers it only when `canUnlock`; `useYoutubePlayback` early-returns while
   `!isUnlocked`. Every fresh page load needs one click — the browser resets user-gesture state on reload.
-- **Host handoff freezes the round clock.** `promotePlayer` force-pauses a `playing` game and freezes
-  `pausedElapsedMs`. Ungraceful disconnects are caught by Supabase presence in `useGameActions`;
-  `pickSuccessorPlayer` picks deterministically (lowest id).
+- **Player liveness uses database leases, not Realtime presence or JWT expiry.** Each tab stores an
+  unguessable token in `sessionStorage`, renews it every 10 seconds, and sends a keepalive disconnect
+  hint on `pagehide`. A hint expires after a 15-second reload grace; a crash with no hint expires after
+  five minutes. Active heartbeats run cleanup promptly, with `pg_cron` as the no-clients-left backstop.
+- **Host handoff is transactional.** Removing an expired/leaving host elects the earliest remaining
+  player and freezes a running round in the same locked database operation. No browser chooses or
+  writes a successor from its local lobby snapshot.
 
 ---
 
@@ -262,14 +267,15 @@ no Spotify auth in the frontend.
 - **Realtime `postgres_changes` filters evaluate against the NEW row on UPDATE** — a public→private
   toggle wouldn't match `is_public=eq.true`, so `subscribeToPublicLobbies` subscribes to all changes and
   re-queries with the filter server-side.
-- **The current player's identity is a `?current=` query param** (read in `Game.tsx`). No auth — a
-  stale/foreign id is treated as kicked by `checkStillMember` in `useLobbyRealtime`.
+- **The current player id is a `?current=` query param**, but membership mutations additionally require
+  the per-tab session token kept in `sessionStorage`. A stale URL has no token and cannot resume or
+  mutate the old player; missing membership is still treated as kicked by `useLobbyRealtime`.
 - **`createGameOptions.ts`** has a `"Test"` playlist marked `// remove in production`.
   `TITLE_ONLY_PLAYLISTS` lists soundtrack playlists offering only `Titre`, read by
   `filterGameModesForCategory` (`src/util/`).
 - **Read-modify-write races** (see the lobby row section). `updateLobbyRow` removes boilerplate but is
   **not** atomic — before adding a mutation, ask who can call it concurrently. Membership changes use
-  the atomic `join_lobby`/`leave_lobby` RPCs; do not move them back to browser-built arrays.
+  token-validating, row-locking RPCs; do not move them back to browser-built arrays or client presence.
 - **Don't split a round transition into several writes** — each `update` is its own broadcast, so N
   writes = N partial-state renders. `updateRound`/`updateGameQuestion`/`resetPlayerAnswer` were removed;
   `startRound` replaces all three.

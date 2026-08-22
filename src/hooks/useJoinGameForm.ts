@@ -3,6 +3,10 @@ import { useNavigate } from "react-router-dom";
 import bcrypt from "bcryptjs-react";
 import type { lobbyRowProps } from "../types";
 import { findLobbyRowByCode, joinLobby } from "../lib/lobbies";
+import {
+	createLobbySessionToken,
+	storeLobbySessionToken,
+} from "../lib/lobbies/session";
 import { usePlayerIdentity } from "./usePlayerIdentity";
 
 export function useJoinGameForm() {
@@ -64,7 +68,9 @@ export function useJoinGameForm() {
 				return;
 			}
 
-			const lobby = await joinLobby(selectedLobbyRow, player);
+			const sessionToken = createLobbySessionToken();
+			const lobby = await joinLobby(selectedLobbyRow, player, sessionToken);
+			storeLobbySessionToken(lobby.generatedCode, player.id, sessionToken);
 			navigate(`/game/${lobby.generatedCode}?current=${player.id}`, {
 				state: lobby,
 			});

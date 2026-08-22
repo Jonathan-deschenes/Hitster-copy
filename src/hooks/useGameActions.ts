@@ -1,130 +1,99 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { GameStatus } from "../types";
-import type { GameStateEnum, lobbyProps, playerProps } from "../types";
+import type { GameStateEnum, lobbyProps } from "../types";
 import {
-	deleteLobby,
 	finishRound,
+	heartbeatLobbySession,
+	kickPlayer,
 	leaveLobby,
 	pauseRound,
 	promotePlayer,
 	resumeRound,
 	startRound,
-	subscribeToLobbyPresence,
 	updateGameSettings,
 	updateGameStatus,
 	updatePlayerAnswer,
 } from "../lib/lobbies";
+import { isFinalRound } from "../util";
 import {
-	isFinalRound,
-	pickRandomOtherPlayer,
-	pickSuccessorPlayer,
-} from "../util";
+	clearLobbySessionToken,
+	markLobbySessionDisconnecting,
+} from "../lib/lobbies/session";
 import type { youtubePlayerHandleProps } from "./useYoutubePlayer";
 
 interface UseGameActionsParams {
 	code?: string;
 	lobby: lobbyProps | null;
 	currentPlayerId?: string | null;
+	sessionToken: string | null;
 	/** Owned by the page — see the single call site in `pages/Game.tsx`. */
 	youtubePlayer: youtubePlayerHandleProps;
-}
-
-/** Promotes `successor` and removes the departing player, or deletes the lobby if no one is left to hand it to. */
-async function resolveHostDeparture(
-	code: string,
-	departingPlayerId: string,
-	successor: playerProps | null,
-) {
-	if (successor) {
-		await promotePlayer(code, successor.id);
-		await leaveLobby(code, departingPlayerId);
-	} else {
-		await deleteLobby(code);
-	}
 }
 
 export function useGameActions({
 	code,
 	lobby,
 	currentPlayerId,
+	sessionToken,
 	youtubePlayer,
 }: UseGameActionsParams) {
 	const navigate = useNavigate();
 
 	const currentPlayer = lobby?.player.find((p) => p.id === currentPlayerId);
-	const players = lobby?.player;
 
-	// Kept fresh without re-subscribing the presence channel on every lobby update.
-	const playersRef = useRef(players);
+	// The database owns expiry and host transfer. This tab only renews its own
+	// unguessable lease; it never decides that another player should be removed.
 	useEffect(() => {
-		playersRef.current = players;
-	}, [players]);
+		if (!code || !currentPlayerId || !sessionToken) return;
 
-	// Detects players (including the host) whose connection drops without
-	// going through handleLeaving/handlePlayerKick (closed tab, crash, lost
-	// network, ...). Each connected client runs this same logic and, thanks
-	// to the deterministic successor pick, only one of them actually acts.
-	useEffect(() => {
-		if (!code || !currentPlayerId) return;
+		const renew = () => {
+			heartbeatLobbySession(code, currentPlayerId, sessionToken)
+				.then((active) => {
+					if (active) return;
+					clearLobbySessionToken(code, currentPlayerId);
+					navigate("/", { replace: true });
+				})
+				.catch(console.error);
+		};
+		const handlePageHide = () => {
+			markLobbySessionDisconnecting(code, currentPlayerId, sessionToken);
+		};
 
-		const unsubscribe = subscribeToLobbyPresence(
-			code,
-			currentPlayerId,
-			(leftPlayerId) => {
-				const currentPlayers = playersRef.current;
-				if (!currentPlayers) return;
+		renew();
+		const heartbeat = window.setInterval(renew, 10_000);
+		window.addEventListener("pagehide", handlePageHide);
 
-				const leftPlayer = currentPlayers.find((p) => p.id === leftPlayerId);
-				// Already handled through a normal leave/kick, or unknown player.
-				if (!leftPlayer) return;
-
-				if (leftPlayer.host) {
-					const successor = pickSuccessorPlayer(currentPlayers, leftPlayerId);
-					// Nobody else in the lobby to detect this at all, or it's not my turn to act.
-					if (!successor || successor.id !== currentPlayerId) return;
-
-					resolveHostDeparture(code, leftPlayerId, successor);
-				} else {
-					// Only the host is allowed to remove a player.
-					const iAmHost = currentPlayers.find(
-						(p) => p.id === currentPlayerId,
-					)?.host;
-					if (!iAmHost) return;
-
-					leaveLobby(code, leftPlayerId);
-				}
-			},
-		);
-
-		return unsubscribe;
-	}, [code, currentPlayerId]);
+		return () => {
+			window.clearInterval(heartbeat);
+			window.removeEventListener("pagehide", handlePageHide);
+		};
+	}, [code, currentPlayerId, navigate, sessionToken]);
 
 	async function handleLeaving() {
-		if (!code || !lobby || !currentPlayerId || !players) return;
+		if (!code || !lobby || !currentPlayerId || !sessionToken) return;
 
-		if (currentPlayer?.host) {
-			const successor = pickRandomOtherPlayer(players, currentPlayerId);
-			await youtubePlayer.pause();
-			await resolveHostDeparture(code, currentPlayerId, successor);
-		} else {
-			await leaveLobby(code, currentPlayerId);
-		}
+		if (currentPlayer?.host) await youtubePlayer.pause();
+		await leaveLobby(code, currentPlayerId, sessionToken);
+		clearLobbySessionToken(code, currentPlayerId);
 
 		navigate("/");
 	}
 
 	async function handlePlayerKick(playerId: string) {
-		if (!code || !lobby || !playerId) return;
+		if (!code || !lobby || !playerId || !currentPlayerId || !sessionToken)
+			return;
 
-		if (currentPlayer?.host) await leaveLobby(code, playerId);
+		if (currentPlayer?.host)
+			await kickPlayer(code, currentPlayerId, sessionToken, playerId);
 	}
 
 	async function handlePlayerPromotion(playerId: string) {
-		if (!code || !lobby || !playerId) return;
+		if (!code || !lobby || !playerId || !currentPlayerId || !sessionToken)
+			return;
 
 		if (currentPlayer?.host && playerId !== currentPlayer?.id)
-			await promotePlayer(code, playerId);
+			await promotePlayer(code, currentPlayerId, sessionToken, playerId);
 	}
 
 	// Starting the first round and starting every later one are the same

@@ -1,4 +1,5 @@
 import { supabase } from "../supabaseClient";
+import { GameStatus } from "../../types";
 import type { lobbyProps, lobbyRowProps } from "../../types";
 import { rowToLobby } from "./mappers";
 
@@ -20,6 +21,7 @@ export async function findPublicLobbies(): Promise<lobbyRowProps[]> {
 		.from("lobbies")
 		.select()
 		.eq("is_public", true)
+		.contains("game_state", { status: GameStatus.Waiting })
 		.order("created_at", { ascending: false });
 
 	if (error) throw error;

@@ -44,7 +44,7 @@ Deno.serve(async (req: Request) => {
 
 		const { data: lobby, error: lobbyError } = await supabaseAdmin
 			.from("lobbies")
-			.select("id, game_state, players, music_queue")
+			.select("id, game_state, music_queue")
 			.eq("code", lobbyCode)
 			.single();
 		if (lobbyError || !lobby) throw lobbyError ?? new Error("Lobby not found");
@@ -80,42 +80,26 @@ Deno.serve(async (req: Request) => {
 					question: lobby.game_state.question,
 					questionMode: lobby.game_state.questionMode,
 				};
-		const players = (lobby.players ?? []).map((player: Record<string, unknown>) => ({
-			...player,
-			answer: "",
-			answeredAt: undefined,
-			roundPoints: 0,
-			roundCorrect: false,
-		}));
-
-		const { error: updateError } = await supabaseAdmin
-			.from("lobbies")
-			.update({
-				players,
-				game_state: {
-					...lobby.game_state,
-					...resolved,
-					round,
-					status: "playing",
-					roundStartedAt: Date.now(),
-					pausedElapsedMs: undefined,
-					revealedTrack: undefined,
+		const { data: started, error: updateError } = await supabaseAdmin.rpc(
+			"start_lobby_round",
+			{
+				target_lobby_id: lobby.id,
+				expected_status: status,
+				expected_round: lobby.game_state.round ?? 0,
+				next_round: round,
+				next_question: resolved.question,
+				next_question_mode: resolved.questionMode,
+				playback_track: {
+					trackId: queuedTrack.track_id,
+					youtubeIds: queuedTrack.youtube_ids,
 				},
-				music_queue: {
-					items: [
-						{
-							trackId: queuedTrack.track_id,
-							youtubeIds: queuedTrack.youtube_ids,
-						},
-					],
-					current: 0,
-					length: queueLength,
-				},
-			})
-			.eq("id", lobby.id);
+				queue_length: queueLength,
+				started_at: Date.now(),
+			},
+		);
 		if (updateError) throw updateError;
 
-		return new Response(JSON.stringify({ started: true }), {
+		return new Response(JSON.stringify({ started }), {
 			headers: { ...corsHeaders, "Content-Type": "application/json" },
 		});
 	} catch (error) {
