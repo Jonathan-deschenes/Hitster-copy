@@ -76,11 +76,14 @@ export async function joinLobby(
 	row: lobbyRowProps,
 	player: playerProps,
 ): Promise<lobbyProps> {
-	const players = [...row.players, player];
+	// The selected row can be several seconds old. Appending in the browser
+	// would let simultaneous joiners overwrite one another with competing
+	// snapshots, so PostgreSQL must append against the currently locked row.
 	const { data, error } = await supabase
-		.from("lobbies")
-		.update({ players })
-		.eq("id", row.id)
+		.rpc("join_lobby", {
+			target_lobby_id: row.id,
+			joining_player: player,
+		})
 		.select()
 		.single();
 
@@ -92,12 +95,18 @@ export async function leaveLobby(
 	code: string,
 	playerId: string,
 ): Promise<lobbyProps | null> {
-	const row = await findLobbyRowByCode(code);
-	if (!row) return null;
+	// Keep removal atomic too: a presence cleanup racing a join must not write
+	// an older players array back over the newly joined player.
+	const { data, error } = await supabase
+		.rpc("leave_lobby", {
+			lobby_code: code,
+			leaving_player_id: playerId,
+		})
+		.select()
+		.maybeSingle();
 
-	return updateLobbyRow(code, {
-		players: row.players.filter((player) => player.id !== playerId),
-	});
+	if (error) throw error;
+	return data ? rowToLobby(data as lobbyRowProps) : null;
 }
 
 export async function deleteLobby(code: string): Promise<void> {

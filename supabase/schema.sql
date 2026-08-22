@@ -117,6 +117,57 @@ where not (music_queue ? 'length')
      false
    );
 
+-- Membership changes must be evaluated inside the UPDATE that locks the row.
+-- Building a players array in the browser from a previously selected lobby
+-- loses players when two joins (or a join and a presence cleanup) race.
+create or replace function public.join_lobby(
+  target_lobby_id uuid,
+  joining_player jsonb
+)
+returns setof public.lobbies
+language sql
+security invoker
+set search_path = public
+as $$
+  update public.lobbies
+  set players = case
+    -- Idempotent for a retried request or a double form submission.
+    when exists (
+      select 1
+      from jsonb_array_elements(players) as existing_player
+      where existing_player->>'id' = joining_player->>'id'
+    ) then players
+    else players || jsonb_build_array(joining_player)
+  end
+  where id = target_lobby_id
+  returning *;
+$$;
+
+revoke all on function public.join_lobby(uuid, jsonb) from public;
+grant execute on function public.join_lobby(uuid, jsonb) to anon, authenticated;
+
+create or replace function public.leave_lobby(
+  lobby_code text,
+  leaving_player_id text
+)
+returns setof public.lobbies
+language sql
+security invoker
+set search_path = public
+as $$
+  update public.lobbies
+  set players = (
+    select coalesce(jsonb_agg(player order by position), '[]'::jsonb)
+    from jsonb_array_elements(players) with ordinality as item(player, position)
+    where player->>'id' <> leaving_player_id
+  )
+  where code = lobby_code
+  returning *;
+$$;
+
+revoke all on function public.leave_lobby(text, text) from public;
+grant execute on function public.leave_lobby(text, text) to anon, authenticated;
+
 -- Atomically changes only one player's answer, avoiding concurrent answer
 -- submissions overwriting the whole players array. Callable only through the
 -- service-role Edge Function.
