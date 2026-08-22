@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { playerProps } from "../../types";
 import { IconCrown, IconKick, IconMore } from "../icons/PlayerIcons";
 import { RANK_STYLES } from "./rankStyles";
@@ -20,26 +21,69 @@ export default function Scoreboard({
 	promotionAction,
 }: ScoreboardProps) {
 	const [menuPlayerId, setMenuPlayerId] = useState<string | null>(null);
-	const openMenuRef = useRef<HTMLLIElement | null>(null);
+	const [menuPosition, setMenuPosition] = useState<{
+		top: number;
+		left: number;
+	} | null>(null);
+	const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+	const menuRef = useRef<HTMLDivElement | null>(null);
 
 	useEffect(() => {
 		if (!menuPlayerId) return;
 
-		function handleClickOutside(e: MouseEvent) {
+		function updateMenuPosition() {
+			const button = menuButtonRef.current;
+			if (!button) return;
+
+			const rect = button.getBoundingClientRect();
+			const menuWidth = 160;
+			const menuHeight = menuRef.current?.offsetHeight ?? 88;
+			const gap = 4;
+			const viewportPadding = 8;
+			const fitsBelow =
+				rect.bottom + gap + menuHeight <= window.innerHeight - viewportPadding;
+
+			setMenuPosition({
+				top: fitsBelow
+					? rect.bottom + gap
+					: Math.max(viewportPadding, rect.top - menuHeight - gap),
+				left: Math.max(
+					viewportPadding,
+					Math.min(
+						rect.right - menuWidth,
+						window.innerWidth - menuWidth - viewportPadding,
+					),
+				),
+			});
+		}
+
+		function handleClickOutside(event: PointerEvent) {
+			const target = event.target as Node;
 			if (
-				openMenuRef.current &&
-				!openMenuRef.current.contains(e.target as Node)
+				!menuButtonRef.current?.contains(target) &&
+				!menuRef.current?.contains(target)
 			) {
 				setMenuPlayerId(null);
 			}
 		}
 
-		document.addEventListener("mousedown", handleClickOutside);
-		return () => document.removeEventListener("mousedown", handleClickOutside);
+		updateMenuPosition();
+		document.addEventListener("pointerdown", handleClickOutside);
+		window.addEventListener("resize", updateMenuPosition);
+		window.addEventListener("scroll", updateMenuPosition, true);
+
+		return () => {
+			document.removeEventListener("pointerdown", handleClickOutside);
+			window.removeEventListener("resize", updateMenuPosition);
+			window.removeEventListener("scroll", updateMenuPosition, true);
+			setMenuPosition(null);
+		};
 	}, [menuPlayerId]);
 
+	const modalRoot = document.getElementById("modal-root");
+
 	return (
-		<ol className='flex h-full flex-col gap-2 overflow-y-auto pr-1'>
+		<ol className='scrollbar-hidden flex h-full flex-col gap-2 overflow-y-auto pr-1'>
 			{rankPlayers(players).map(({ player, rank }) => {
 				const isYou = player.id === currentPlayerId;
 				const isManageable = canManagePlayers && !isYou;
@@ -48,7 +92,6 @@ export default function Scoreboard({
 				return (
 					<li
 						key={player.id}
-						ref={isMenuOpen ? openMenuRef : undefined}
 						className={`relative flex items-center gap-4 rounded-2xl border px-4 py-3 ${
 							isYou
 								? "border-accent-blue bg-purple/12"
@@ -80,8 +123,11 @@ export default function Scoreboard({
 
 						{isManageable && (
 							<button
+								ref={isMenuOpen ? menuButtonRef : null}
 								type='button'
 								aria-label={`Gérer ${player.pseudo || "ce joueur"}`}
+								aria-haspopup='menu'
+								aria-expanded={isMenuOpen}
 								onClick={() =>
 									setMenuPlayerId((current) =>
 										current === player.id ? null : player.id,
@@ -93,10 +139,19 @@ export default function Scoreboard({
 							</button>
 						)}
 
-						{isMenuOpen && (
-							<div className='absolute top-full right-4 z-40 mt-1 flex w-40 flex-col overflow-hidden rounded-xl border border-lavender/14 bg-bg-deep shadow-lg'>
+						{isMenuOpen &&
+							menuPosition &&
+							modalRoot &&
+							createPortal(
+								<div
+									ref={menuRef}
+									role='menu'
+									className='fixed z-[70] flex w-40 flex-col overflow-hidden rounded-xl border border-lavender/14 bg-bg-deep shadow-lg'
+									style={menuPosition}
+								>
 								<button
 									type='button'
+									role='menuitem'
 									onClick={() => {
 										promotionAction(player.id);
 										setMenuPlayerId(null);
@@ -108,6 +163,7 @@ export default function Scoreboard({
 								</button>
 								<button
 									type='button'
+									role='menuitem'
 									onClick={() => {
 										kickAction(player.id);
 										setMenuPlayerId(null);
@@ -117,8 +173,9 @@ export default function Scoreboard({
 									<IconKick />
 									Exclure
 								</button>
-							</div>
-						)}
+								</div>,
+								modalRoot,
+							)}
 					</li>
 				);
 			})}

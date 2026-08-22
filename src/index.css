@@ -41,6 +41,17 @@
 	@apply rounded-2xl border border-lavender/14 bg-bg-deep/35 px-4 py-3.5;
 }
 
+/* Visually hide scrollbars without disabling mouse-wheel, trackpad, keyboard,
+   or touch scrolling. */
+@utility scrollbar-hidden {
+	-ms-overflow-style: none;
+	scrollbar-width: none;
+
+	&::-webkit-scrollbar {
+		display: none;
+	}
+}
+
 @keyframes pulse-glow {
 	0%,
 	100% {
@@ -97,6 +108,18 @@ body {
 	height: 100%;
 }
 
+/* A quick double tap on an interactive control can otherwise be interpreted
+   as a page-zoom gesture by mobile Safari. This keeps taps responsive while
+   preserving ordinary page scrolling and pinch-to-zoom. */
+a,
+button,
+input,
+select,
+textarea,
+[role="button"] {
+	touch-action: manipulation;
+}
+
 body {
 	font-family: var(--font-body);
 	background: var(--color-bg-deep);
@@ -114,6 +137,15 @@ body {
    phones, so its `max-width: calc(50% - 20px)` keeps toasts cramped
    and wrapping badly. Widen them on real mobile viewports instead. */
 @media (max-width: 640px) {
+	/* iOS Safari zooms the viewport when a text control smaller than 16px gets
+	   focus. Keep every keyboard-driven field at that threshold so opening a
+	   form (including the in-game answer box) does not disrupt the layout. */
+	input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+	select,
+	textarea {
+		font-size: 16px;
+	}
+
 	.toastify.toastify-right,
 	.toastify.toastify-left {
 		left: 16px;
